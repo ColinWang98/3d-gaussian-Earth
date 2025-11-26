@@ -1,115 +1,421 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gaussian Earth: Community Splat World</title>
+    <title>Gaussian Earth: Community 3D World</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; color: white; }
-        #canvas-container { position: absolute; width: 100%; height: 100%; z-index: 1; }
+        :root { --primary: #00ff88; --glass: rgba(10, 15, 30, 0.85); }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; color: white; }
         
-        /* UI Overlay */
-        #ui-layer { position: absolute; pointer-events: none; width: 100%; height: 100%; z-index: 10; }
+        #canvas-container { position: absolute; inset: 0; z-index: 1; }
         
-        /* Upload Button & Modal */
+        /* UI Layer */
+        #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+        .pointer-auto { pointer-events: auto; }
+
+        /* Upload Button */
         #upload-btn {
-            position: absolute; top: 20px; right: 20px; pointer-events: auto;
-            background: linear-gradient(135deg, #ff00cc, #333399);
-            border: none; padding: 10px 20px; border-radius: 30px; color: white; font-weight: bold; cursor: pointer;
+            position: absolute; top: 20px; right: 20px;
+            background: linear-gradient(135deg, #00c6ff, #0072ff);
+            border: none; padding: 12px 24px; border-radius: 50px;
+            color: white; font-weight: bold; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,114,255,0.4);
+            transition: transform 0.2s;
         }
-        #upload-modal {
-            display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: rgba(20, 20, 30, 0.95); padding: 30px; border-radius: 15px; border: 1px solid #444;
-            width: 300px; pointer-events: auto; backdrop-filter: blur(10px);
+        #upload-btn:hover { transform: scale(1.05); }
+
+        /* Modal */
+        #modal-overlay {
+            display: none; position: absolute; inset: 0;
+            background: rgba(0,0,0,0.8); backdrop-filter: blur(5px);
+            z-index: 100; justify-content: center; align-items: center;
         }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-size: 0.9rem; color: #aaa; }
-        input, textarea { width: 100%; background: #111; border: 1px solid #333; color: white; padding: 8px; border-radius: 5px; }
-        
-        /* Bottom Bar */
-        #bottom-bar {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            width: 80%; max-width: 600px; background: rgba(10, 15, 30, 0.8);
-            padding: 20px; border-radius: 20px; display: none; pointer-events: auto;
-            backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
+        #upload-form {
+            background: #1a1a2e; padding: 30px; border-radius: 16px;
+            width: 90%; max-width: 400px; border: 1px solid #333;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 6px; color: #888; font-size: 0.9em; }
+        input, textarea {
+            width: 100%; box-sizing: border-box; background: #0f0f1a;
+            border: 1px solid #333; color: white; padding: 10px; border-radius: 8px;
+        }
+        .btn-submit { width: 100%; background: var(--primary); color: black; border:none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-cancel { width: 100%; background: transparent; border: 1px solid #444; color: #888; padding: 8px; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+
+        /* Info Bar */
+        #info-bar {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 500px; background: var(--glass);
+            padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
+            display: none; transition: opacity 0.3s;
+        }
+        .action-btn {
+            background: var(--primary); color: #000; border: none;
+            padding: 8px 20px; border-radius: 20px; font-weight: bold; cursor: pointer;
+            float: right; margin-top: -30px;
         }
 
-        /* Splat Viewer Container */
-        #splat-container {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 5; display: none; pointer-events: auto; background: rgba(0,0,0,0.8);
+        /* Splat Viewer Overlay */
+        #splat-viewer {
+            position: absolute; inset: 0; background: #000; z-index: 50; display: none;
         }
         #close-splat {
-            position: absolute; top: 20px; left: 20px; z-index: 20;
-            background: white; color: black; border: none; padding: 5px 15px; cursor: pointer;
+            position: absolute; top: 20px; left: 20px; z-index: 60;
+            background: white; color: black; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;
         }
-        
-        #loading-overlay {
-            position: absolute; top:0; left:0; width:100%; height:100%; background:black; 
-            display:flex; justify-content:center; align-items:center; z-index: 999;
-        }
+
+        #loader { position: absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-family: monospace; color: var(--primary); }
     </style>
-    
-    <!-- Libraries -->
+
+    <!-- Import Map -->
     <script type="importmap">
     {
         "imports": {
-            "three": "https://unpkg.com/three@0.157.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.157.0/examples/jsm/",
-            "@mkkellogg/gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.3.0/build/gaussian-splats-3d.module.js",
-            "@huggingface/hub": "https://cdn.jsdelivr.net/npm/@huggingface/hub@0.8.3/+esm"
+            "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/",
+            "@mkkellogg/gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js",
+            "@huggingface/hub": "https://cdn.jsdelivr.net/npm/@huggingface/hub@0.15.1/+esm",
+            "exifr": "https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.esm.mjs"
         }
     }
     </script>
-    <!-- EXIF Reader for GPS extraction -->
-    <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
 </head>
 <body>
 
-    <div id="loading-overlay">LOADING EARTH SYSTEM...</div>
+    <div id="loader">INITIALIZING SYSTEM...</div>
 
+    <!-- Main 3D Earth Container -->
     <div id="canvas-container"></div>
 
-    <!-- Real 3DGS Viewer Overlay -->
-    <div id="splat-container">
-        <button id="close-splat">← Back to Earth</button>
-        <!-- The 3DGS canvas will be injected here by the library -->
+    <!-- Splat Viewer Container (Full Screen Overlay) -->
+    <div id="splat-viewer" class="pointer-auto">
+        <button id="close-splat">← EXIT 3D VIEW</button>
+        <!-- 3DGS Canvas injected here -->
     </div>
 
+    <!-- UI Layer -->
     <div id="ui-layer">
-        <button id="upload-btn" onclick="document.getElementById('upload-modal').style.display='block'">+ Upload New Spot</button>
-        
-        <!-- Upload Form -->
-        <div id="upload-modal">
-            <h3>Add a Gaussian Memory</h3>
-            <div class="form-group">
-                <label>HF Write Token (Required):</label>
-                <input type="password" id="hf-token" placeholder="hf_...">
-            </div>
-            <div class="form-group">
-                <label>Cover Photo (for GPS):</label>
-                <input type="file" id="file-photo" accept="image/jpeg">
-            </div>
-            <div class="form-group">
-                <label>3D Model (.splat):</label>
-                <input type="file" id="file-splat" accept=".splat,.ply">
-            </div>
-            <div class="form-group">
-                <label>Description:</label>
-                <textarea id="desc-text" rows="2" placeholder="A busy street in..."></textarea>
-            </div>
-            <button onclick="handleUpload()" style="width:100%; background:#4deeea; border:none; padding:10px; cursor:pointer; font-weight:bold;">🚀 Launch to Orbit</button>
-            <button onclick="document.getElementById('upload-modal').style.display='none'" style="margin-top:10px; width:100%; background:transparent; border:1px solid #555; color:#aaa; cursor:pointer;">Cancel</button>
+        <button id="upload-btn" class="pointer-auto" onclick="UI.openUpload()">+ UPLOAD</button>
+
+        <!-- Location Info Card -->
+        <div id="info-bar" class="pointer-auto">
+            <h2 id="loc-title" style="margin: 0 0 5px 0; font-size: 1.2em;">Location</h2>
+            <p id="loc-desc" style="margin: 0; color: #aaa; font-size: 0.9em;">Description</p>
+            <button class="action-btn" onclick="App.enterSplatMode()">VIEW 3D</button>
         </div>
 
-        <!-- Location Info -->
-        <div id="bottom-bar">
-            <h2 id="loc-name" style="margin:0">Location Name</h2>
-            <p id="loc-desc" style="color:#ccc; font-size:0.9em; margin:5px 0 10px 0">...</p>
-            <button onclick="enterSplatView()" style="background:#4deeea; border:none; padding:8px 20px; border-radius:20px; cursor:pointer; font-weight:bold">👁️ Enter 3D View</button>
+        <!-- Upload Modal -->
+        <div id="modal-overlay" class="pointer-auto">
+            <div id="upload-form">
+                <h3 style="margin-top:0">New Memory</h3>
+                
+                <div class="input-group">
+                    <label>HF Write Token (Required)</label>
+                    <input type="password" id="hf-token" placeholder="hf_...">
+                </div>
+                
+                <div class="input-group">
+                    <label>Photo (GPS Required)</label>
+                    <input type="file" id="file-photo" accept="image/*">
+                </div>
+                
+                <div class="input-group">
+                    <label>3D Model (.splat)</label>
+                    <input type="file" id="file-splat" accept=".splat,.ply">
+                </div>
+
+                <div class="input-group">
+                    <label>Description</label>
+                    <textarea id="desc-text" rows="2"></textarea>
+                </div>
+
+                <button class="btn-submit" onclick="App.handleUpload()">UPLOAD TO ORBIT</button>
+                <button class="btn-cancel" onclick="UI.closeUpload()">CANCEL</button>
+                <p id="upload-status" style="color: #00ff88; font-size: 0.8em; text-align: center; height: 1em;"></p>
+            </div>
         </div>
     </div>
 
-    <script type="module" src="./js/app.js"></script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
+        import { commit, listFiles } from '@huggingface/hub';
+        import exifr from 'exifr';
+
+        // ================= CONFIGURATION =================
+        // 请在这里填入你的 HF Dataset 仓库 ID (例如: "username/my-splat-world")
+        const REPO_ID = "ColinWong24/my-gaussian-world"; 
+        // =================================================
+
+        // --- STATE ---
+        const state = {
+            locations: [],
+            currentLoc: null,
+            viewer: null
+        };
+
+        // --- UI HELPERS ---
+        const UI = {
+            openUpload: () => document.getElementById('modal-overlay').style.display = 'flex',
+            closeUpload: () => {
+                document.getElementById('modal-overlay').style.display = 'none';
+                document.getElementById('upload-status').innerText = "";
+            },
+            showLoader: (show) => document.getElementById('loader').style.display = show ? 'block' : 'none',
+            setStatus: (msg) => document.getElementById('upload-status').innerText = msg
+        };
+        window.UI = UI; // Expose to HTML
+
+        // --- EARTH APP ---
+        const App = {
+            scene: null, camera: null, renderer: null, controls: null,
+            markerGroup: new THREE.Group(),
+
+            init: async function() {
+                // 1. Setup Three.js
+                const container = document.getElementById('canvas-container');
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x020205);
+                
+                this.camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 10000);
+                this.camera.position.z = 200;
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(window.devicePixelRatio);
+                container.appendChild(this.renderer.domElement);
+
+                this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.autoRotate = true;
+                this.controls.autoRotateSpeed = 0.5;
+
+                // 2. Lights
+                const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+                sun.position.set(100, 50, 100);
+                this.scene.add(new THREE.AmbientLight(0x404040, 2));
+                this.scene.add(sun);
+
+                // 3. Earth
+                const texLoader = new THREE.TextureLoader();
+                const earthGeo = new THREE.SphereGeometry(50, 64, 64);
+                const earthMat = new THREE.MeshPhongMaterial({
+                    map: texLoader.load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg'),
+                    bumpMap: texLoader.load('https://unpkg.com/three-globe/example/img/earth-topology.png'),
+                    bumpScale: 1.5,
+                    specular: new THREE.Color(0x222222)
+                });
+                const earth = new THREE.Mesh(earthGeo, earthMat);
+                this.scene.add(earth);
+                this.scene.add(this.markerGroup);
+
+                // 4. Atmosphere
+                const atmoGeo = new THREE.SphereGeometry(52, 64, 64);
+                const atmoMat = new THREE.MeshBasicMaterial({ color: 0x0066ff, transparent: true, opacity: 0.1, side: THREE.BackSide });
+                this.scene.add(new THREE.Mesh(atmoGeo, atmoMat));
+
+                // 5. Events
+                window.addEventListener('resize', () => this.onResize());
+                window.addEventListener('pointerdown', (e) => this.onClick(e));
+                
+                // 6. Load Data
+                await this.loadLocations();
+                
+                UI.showLoader(false);
+                this.animate();
+            },
+
+            loadLocations: async function() {
+                try {
+                    const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json`;
+                    const res = await fetch(url + "?t=" + Date.now()); // Prevent cache
+                    if(!res.ok) throw new Error("No data yet");
+                    
+                    state.locations = await res.json();
+                    
+                    // Render Markers
+                    this.markerGroup.clear();
+                    state.locations.forEach(loc => {
+                        const mesh = new THREE.Mesh(
+                            new THREE.SphereGeometry(0.6, 16, 16),
+                            new THREE.MeshBasicMaterial({ color: 0x00ff88 })
+                        );
+                        
+                        // Convert LatLon to Vector3
+                        const phi = (90 - loc.lat) * (Math.PI / 180);
+                        const theta = (loc.lon + 180) * (Math.PI / 180);
+                        const r = 50.5;
+                        mesh.position.set(
+                            -(r * Math.sin(phi) * Math.cos(theta)),
+                            (r * Math.cos(phi)),
+                            (r * Math.sin(phi) * Math.sin(theta))
+                        );
+                        
+                        mesh.userData = loc;
+                        
+                        // Add Glow
+                        const glow = new THREE.Mesh(
+                            new THREE.SphereGeometry(1.2, 16, 16),
+                            new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.3 })
+                        );
+                        mesh.add(glow);
+
+                        this.markerGroup.add(mesh);
+                    });
+
+                } catch(e) {
+                    console.log("Init empty world or error:", e);
+                }
+            },
+
+            onClick: function(event) {
+                if(event.target.closest('#ui-layer')) return; // Ignore UI clicks
+
+                const raycaster = new THREE.Raycaster();
+                const mouse = new THREE.Vector2(
+                    (event.clientX / window.innerWidth) * 2 - 1,
+                    -(event.clientY / window.innerHeight) * 2 + 1
+                );
+                
+                raycaster.setFromCamera(mouse, this.camera);
+                const intersects = raycaster.intersectObjects(this.markerGroup.children);
+
+                if(intersects.length > 0) {
+                    this.controls.autoRotate = false;
+                    const data = intersects[0].object.userData;
+                    state.currentLoc = data;
+                    
+                    // Show Info
+                    const info = document.getElementById('info-bar');
+                    info.style.display = 'block';
+                    document.getElementById('loc-title').innerText = "Found: 3D Memory";
+                    document.getElementById('loc-desc').innerText = data.desc || "No description.";
+                    
+                    // Fly to
+                    // (Simple implementation, ideally use GSAP)
+                    this.camera.position.lerp(intersects[0].object.position.clone().multiplyScalar(1.5), 0.5);
+                } else {
+                    this.controls.autoRotate = true;
+                    document.getElementById('info-bar').style.display = 'none';
+                }
+            },
+
+            handleUpload: async function() {
+                const token = document.getElementById('hf-token').value;
+                const photo = document.getElementById('file-photo').files[0];
+                const splat = document.getElementById('file-splat').files[0];
+                const desc = document.getElementById('desc-text').value;
+
+                if(!token || !photo || !splat) return alert("Fill all fields!");
+                
+                UI.setStatus("Analyzing GPS...");
+
+                try {
+                    // 1. Extract GPS
+                    const gps = await exifr.gps(photo);
+                    if(!gps) throw new Error("No GPS found in photo!");
+                    
+                    UI.setStatus("Uploading to Hugging Face...");
+                    
+                    // 2. Prepare Paths
+                    const ts = Date.now();
+                    const splatPath = `models/${ts}.splat`;
+                    const photoPath = `photos/${ts}.jpg`;
+                    
+                    // 3. Prepare New Entry
+                    const newEntry = {
+                        id: ts,
+                        lat: gps.latitude,
+                        lon: gps.longitude,
+                        desc: desc,
+                        splatPath: splatPath, // Store relative path
+                        photoPath: photoPath
+                    };
+                    
+                    // 4. Fetch current JSON to append
+                    // (Simple append logic - in prod use better locking)
+                    let currentList = [];
+                    try {
+                        const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json`);
+                        if(res.ok) currentList = await res.json();
+                    } catch(e) {}
+                    
+                    currentList.push(newEntry);
+                    const jsonBlob = new Blob([JSON.stringify(currentList, null, 2)], {type: "application/json"});
+                    
+                    // 5. Atomic Commit
+                    await commit({
+                        credentials: { accessToken: token },
+                        repo: { type: "dataset", name: REPO_ID },
+                        operations: [
+                            { operation: "addOrUpdate", path: splatPath, content: splat },
+                            { operation: "addOrUpdate", path: photoPath, content: photo },
+                            { operation: "addOrUpdate", path: "locations.json", content: jsonBlob }
+                        ],
+                        title: `New Splat at ${gps.latitude.toFixed(2)}, ${gps.longitude.toFixed(2)}`
+                    });
+
+                    UI.setStatus("Success! Reloading...");
+                    setTimeout(() => {
+                        UI.closeUpload();
+                        this.loadLocations();
+                    }, 1000);
+
+                } catch(e) {
+                    console.error(e);
+                    UI.setStatus("Error: " + e.message);
+                }
+            },
+
+            enterSplatMode: function() {
+                if(!state.currentLoc) return;
+                document.getElementById('splat-viewer').style.display = 'block';
+
+                // Resolve full URL
+                const splatUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
+                
+                if(!state.viewer) {
+                    state.viewer = new GaussianSplats3D.Viewer({
+                        'cameraUp': [0, -1, -0.6],
+                        'initialCameraPosition': [-1, -4, 6],
+                        'initialCameraLookAt': [0, 4, 0],
+                        'rootElement': document.getElementById('splat-viewer'),
+                        'sharedMemoryForWebWorkers': false // Ensure compat
+                    });
+                    state.viewer.init();
+                }
+                
+                state.viewer.addSplatScene(splatUrl, {
+                    'streamView': true
+                }).then(() => {
+                    state.viewer.start();
+                });
+            },
+
+            animate: function() {
+                requestAnimationFrame(() => this.animate());
+                this.controls.update();
+                this.renderer.render(this.scene, this.camera);
+            },
+            
+            onResize: function() {
+                this.camera.aspect = window.innerWidth / window.innerHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        };
+        window.App = App; // Expose
+
+        document.getElementById('close-splat').onclick = () => {
+            document.getElementById('splat-viewer').style.display = 'none';
+            // Optional: dispose scene to save memory
+        };
+
+        App.init();
+    </script>
 </body>
 </html>
