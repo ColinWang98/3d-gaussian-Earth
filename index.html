@@ -3,18 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gaussian Earth: Community 3D World</title>
+    <title>Gaussian Earth: 3D World Explorer</title>
     <style>
-        :root { --primary: #00ff88; --glass: rgba(10, 15, 30, 0.85); }
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; color: white; }
+        :root { --primary: #00ff88; --glass: rgba(10, 15, 30, 0.85); --ai-color: #bd34fe; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Roboto, sans-serif; color: white; }
         
+        /* 3D Canvas */
         #canvas-container { position: absolute; inset: 0; z-index: 1; }
         
-        /* UI Layer */
+        /* UI Layer - Non-blocking */
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
         .pointer-auto { pointer-events: auto; }
 
-        /* Upload Button */
+        /* Top Buttons */
         #upload-btn {
             position: absolute; top: 20px; right: 20px;
             background: linear-gradient(135deg, #00c6ff, #0072ff);
@@ -25,32 +26,42 @@
         }
         #upload-btn:hover { transform: scale(1.05); }
 
-        /* Modal */
+        #settings-btn {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(255,255,255,0.1); border: 1px solid #444;
+            padding: 10px; border-radius: 50%; cursor: pointer; color: #aaa;
+            transition: background 0.2s;
+        }
+        #settings-btn:hover { background: rgba(255,255,255,0.2); color: white; }
+
+        /* Modal System */
         #modal-overlay {
             display: none; position: absolute; inset: 0;
             background: rgba(0,0,0,0.8); backdrop-filter: blur(5px);
             z-index: 100; justify-content: center; align-items: center;
         }
-        #upload-form {
+        .modal-box {
             background: #1a1a2e; padding: 30px; border-radius: 16px;
             width: 90%; max-width: 400px; border: 1px solid #333;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5); pointer-events: auto;
         }
         .input-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 6px; color: #888; font-size: 0.9em; }
         input, textarea {
             width: 100%; box-sizing: border-box; background: #0f0f1a;
             border: 1px solid #333; color: white; padding: 10px; border-radius: 8px;
+            font-family: inherit;
         }
         .btn-submit { width: 100%; background: var(--primary); color: black; border:none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
         .btn-cancel { width: 100%; background: transparent; border: 1px solid #444; color: #888; padding: 8px; border-radius: 8px; cursor: pointer; margin-top: 10px; }
 
-        /* Info Bar */
+        /* Location Info Bar */
         #info-bar {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
             width: 90%; max-width: 500px; background: var(--glass);
             padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
             display: none; transition: opacity 0.3s;
+            backdrop-filter: blur(12px);
         }
         .action-btn {
             background: var(--primary); color: #000; border: none;
@@ -64,13 +75,38 @@
         }
         #close-splat {
             position: absolute; top: 20px; left: 20px; z-index: 60;
-            background: white; color: black; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;
+            background: white; color: black; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;
         }
 
-        #loader { position: absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-family: monospace; color: var(--primary); }
+        /* AI Chat Box */
+        #ai-chat-box {
+            position: absolute; bottom: 20px; right: 20px; width: 350px; height: 500px;
+            background: rgba(20, 20, 35, 0.95); border-radius: 16px; border: 1px solid var(--ai-color);
+            display: none; flex-direction: column; z-index: 70; overflow: hidden;
+            box-shadow: 0 10px 40px rgba(189, 52, 254, 0.2);
+            backdrop-filter: blur(10px);
+        }
+        #chat-header {
+            padding: 15px; background: linear-gradient(90deg, var(--ai-color), #4b0082);
+            font-weight: bold; display: flex; justify-content: space-between; align-items: center;
+        }
+        #chat-history {
+            flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+        }
+        .msg { padding: 10px; border-radius: 10px; max-width: 85%; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; }
+        .msg.ai { background: #332a40; color: #e0d0ff; align-self: flex-start; border-bottom-left-radius: 0; }
+        .msg.user { background: var(--ai-color); color: white; align-self: flex-end; border-bottom-right-radius: 0; }
+        #chat-input-area {
+            padding: 10px; background: #111; border-top: 1px solid #333; display: flex; gap: 10px;
+        }
+        #chat-input { flex: 1; background: #222; border: none; color: white; padding: 10px; border-radius: 20px; outline: none; }
+        #send-btn { background: var(--ai-color); border: none; color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 1.2em; }
+
+        #loader { position: absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-family: monospace; color: var(--primary); font-size: 1.2em; letter-spacing: 2px; }
+        #upload-status { color: var(--primary); font-size: 0.8em; text-align: center; height: 1.2em; margin-top: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     </style>
 
-    <!-- Import Map -->
+    <!-- Import Map for Modules -->
     <script type="importmap">
     {
         "imports": {
@@ -90,52 +126,74 @@
     <!-- Main 3D Earth Container -->
     <div id="canvas-container"></div>
 
-    <!-- Splat Viewer Container (Full Screen Overlay) -->
+    <!-- Splat Viewer Container -->
     <div id="splat-viewer" class="pointer-auto">
-        <button id="close-splat">← EXIT 3D VIEW</button>
-        <!-- 3DGS Canvas injected here -->
+        <button id="close-splat">← BACK TO ORBIT</button>
+        <!-- 3DGS Canvas injected here automatically -->
+    </div>
+
+    <!-- AI Chat Interface -->
+    <div id="ai-chat-box" class="pointer-auto">
+        <div id="chat-header">
+            <span id="ai-persona-name">Storyteller AI</span>
+            <span style="font-size:0.8em; opacity:0.7">DeepSeek V3</span>
+        </div>
+        <div id="chat-history">
+            <!-- Messages go here -->
+        </div>
+        <div id="chat-input-area">
+            <input type="text" id="chat-input" placeholder="Ask about this place..." onkeypress="if(event.key==='Enter') AIChat.send()">
+            <button id="send-btn" onclick="AIChat.send()">➤</button>
+        </div>
     </div>
 
     <!-- UI Layer -->
     <div id="ui-layer">
+        <button id="settings-btn" class="pointer-auto" onclick="UI.openSettings()">⚙️ API Key</button>
         <button id="upload-btn" class="pointer-auto" onclick="UI.openUpload()">+ UPLOAD</button>
 
         <!-- Location Info Card -->
         <div id="info-bar" class="pointer-auto">
             <h2 id="loc-title" style="margin: 0 0 5px 0; font-size: 1.2em;">Location</h2>
             <p id="loc-desc" style="margin: 0; color: #aaa; font-size: 0.9em;">Description</p>
-            <button class="action-btn" onclick="App.enterSplatMode()">VIEW 3D</button>
+            <button class="action-btn" onclick="App.enterSplatMode()">ENTER 3D & CHAT</button>
         </div>
 
         <!-- Upload Modal -->
         <div id="modal-overlay" class="pointer-auto">
-            <div id="upload-form">
-                <h3 style="margin-top:0">New Memory</h3>
-                
+            <div id="upload-form" class="modal-box">
+                <h3 style="margin-top:0; color:white;">Upload Memory</h3>
                 <div class="input-group">
-                    <label>HF Write Token (Required)</label>
+                    <label>HF Write Token</label>
                     <input type="password" id="hf-token" placeholder="hf_...">
                 </div>
-                
                 <div class="input-group">
-                    <label>Photo (GPS Required)</label>
-                    <input type="file" id="file-photo" accept="image/*">
+                    <label>Photo (Must contain GPS)</label>
+                    <input type="file" id="file-photo" accept="image/jpeg,image/png,image/jpg">
                 </div>
-                
                 <div class="input-group">
-                    <label>3D Model (.splat)</label>
+                    <label>3D Model (.splat / .ply)</label>
                     <input type="file" id="file-splat" accept=".splat,.ply">
                 </div>
-
                 <div class="input-group">
-                    <label>Description</label>
-                    <textarea id="desc-text" rows="2"></textarea>
+                    <label>Your Story (AI Context)</label>
+                    <textarea id="desc-text" rows="3" placeholder="Describe the atmosphere, history, or your feelings..."></textarea>
                 </div>
-
                 <button class="btn-submit" onclick="App.handleUpload()">UPLOAD TO ORBIT</button>
                 <button class="btn-cancel" onclick="UI.closeUpload()">CANCEL</button>
-                <p id="upload-status" style="color: #00ff88; font-size: 0.8em; text-align: center; height: 1em;"></p>
+                <p id="upload-status"></p>
             </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="modal-box" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); z-index: 110;">
+            <h3 style="margin-top:0">Settings</h3>
+            <div class="input-group">
+                <label>DeepSeek API Key</label>
+                <input type="password" id="deepseek-key" placeholder="sk-...">
+            </div>
+            <button class="btn-submit" onclick="UI.saveSettings()">SAVE KEY</button>
+            <button class="btn-cancel" onclick="document.getElementById('settings-modal').style.display='none'">CLOSE</button>
         </div>
     </div>
 
@@ -143,137 +201,297 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
-        import { commit, listFiles } from '@huggingface/hub';
+        import { commit } from '@huggingface/hub';
         import exifr from 'exifr';
 
         // ================= CONFIGURATION =================
-        // 请在这里填入你的 HF Dataset 仓库 ID (例如: "username/my-splat-world")
         const REPO_ID = "ColinWong24/my-gaussian-world"; 
         // =================================================
 
-        // --- STATE ---
         const state = {
             locations: [],
             currentLoc: null,
-            viewer: null
+            viewer: null,
+            deepseekKey: localStorage.getItem('ds_key') || '',
+            chatHistory: []
         };
 
         // --- UI HELPERS ---
         const UI = {
             openUpload: () => document.getElementById('modal-overlay').style.display = 'flex',
-            closeUpload: () => {
-                document.getElementById('modal-overlay').style.display = 'none';
-                document.getElementById('upload-status').innerText = "";
+            closeUpload: () => { 
+                document.getElementById('modal-overlay').style.display = 'none'; 
+                document.getElementById('upload-status').innerText = ""; 
+            },
+            openSettings: () => {
+                document.getElementById('deepseek-key').value = state.deepseekKey;
+                document.getElementById('settings-modal').style.display = 'block';
+            },
+            saveSettings: () => {
+                state.deepseekKey = document.getElementById('deepseek-key').value;
+                localStorage.setItem('ds_key', state.deepseekKey);
+                document.getElementById('settings-modal').style.display = 'none';
+                alert("API Key Saved!");
             },
             showLoader: (show) => document.getElementById('loader').style.display = show ? 'block' : 'none',
-            setStatus: (msg) => document.getElementById('upload-status').innerText = msg
+            setStatus: (msg) => {
+                const el = document.getElementById('upload-status');
+                if(el) el.innerText = msg;
+            }
         };
-        window.UI = UI; // Expose to HTML
+        window.UI = UI;
 
-        // --- EARTH APP ---
+        // --- AI CHAT LOGIC ---
+        const AIChat = {
+            init: function(locationData) {
+                state.chatHistory = []; // Reset
+                const chatBox = document.getElementById('ai-chat-box');
+                const historyDiv = document.getElementById('chat-history');
+                
+                chatBox.style.display = 'flex';
+                historyDiv.innerHTML = '';
+                
+                document.getElementById('ai-persona-name').innerText = "Storyteller AI";
+
+                // SYSTEM PROMPT
+                const systemPrompt = `
+                    You are a knowledgeable local storyteller or the person who took this photo.
+                    Current Location GPS: ${locationData.lat}, ${locationData.lon}.
+                    User's Description of this place: "${locationData.desc || 'A mysterious captured memory.'}".
+                    
+                    Instructions:
+                    1. Adopt a persona matching the description's vibe (e.g., nostalgic, historical, or cyberpunk).
+                    2. Welcome the user to this specific coordinate.
+                    3. Use the GPS coordinates to infer real-world context (city, country, nearby landmarks) if possible.
+                    4. Keep responses concise (max 3 sentences) and engaging.
+                    5. Do not reveal you are an AI model.
+                `;
+                
+                state.chatHistory.push({ role: "system", content: systemPrompt });
+
+                // Trigger first greeting
+                this.callAPI("Hello! Please introduce this place based on the description.");
+            },
+
+            appendMsg: function(role, text) {
+                const div = document.getElementById('chat-history');
+                const msg = document.createElement('div');
+                msg.className = `msg ${role === 'user' ? 'user' : 'ai'}`;
+                msg.innerText = text;
+                div.appendChild(msg);
+                div.scrollTop = div.scrollHeight;
+            },
+
+            send: function() {
+                const input = document.getElementById('chat-input');
+                const text = input.value.trim();
+                if(!text) return;
+                
+                this.appendMsg('user', text);
+                input.value = '';
+                this.callAPI(text);
+            },
+
+            callAPI: async function(userText) {
+                if(!state.deepseekKey) {
+                    this.appendMsg('ai', "⚠️ Please click the ⚙️ button (top left) to set your DeepSeek API Key.");
+                    return;
+                }
+
+                // Add user msg to history (unless it's the auto-trigger)
+                if(userText !== "Hello! Please introduce this place based on the description.") {
+                    state.chatHistory.push({ role: "user", content: userText });
+                }
+
+                // Show typing...
+                const loadingId = 'typing-' + Date.now();
+                const div = document.getElementById('chat-history');
+                const loadMsg = document.createElement('div');
+                loadMsg.className = 'msg ai';
+                loadMsg.id = loadingId;
+                loadMsg.innerText = "...";
+                div.appendChild(loadMsg);
+
+                try {
+                    const response = await fetch("https://api.deepseek.com/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${state.deepseekKey}`
+                        },
+                        body: JSON.stringify({
+                            model: "deepseek-chat",
+                            messages: state.chatHistory,
+                            stream: false,
+                            max_tokens: 150
+                        })
+                    });
+
+                    if(!response.ok) throw new Error("API Error: " + response.status);
+
+                    const data = await response.json();
+                    const aiText = data.choices[0].message.content;
+
+                    // Remove typing indicator
+                    document.getElementById(loadingId).remove();
+                    
+                    // Show result
+                    this.appendMsg('ai', aiText);
+                    state.chatHistory.push({ role: "assistant", content: aiText });
+
+                } catch(e) {
+                    document.getElementById(loadingId).innerText = "Error: " + e.message;
+                }
+            },
+            
+            close: function() {
+                document.getElementById('ai-chat-box').style.display = 'none';
+            }
+        };
+        window.AIChat = AIChat;
+
+        // --- MAIN APP LOGIC ---
         const App = {
-            scene: null, camera: null, renderer: null, controls: null,
+            scene: null, camera: null, renderer: null, controls: null, 
             markerGroup: new THREE.Group(),
+            titleSprite: null,
 
             init: async function() {
-                // 1. Setup Three.js
                 const container = document.getElementById('canvas-container');
+                
+                // 1. Scene
                 this.scene = new THREE.Scene();
                 this.scene.background = new THREE.Color(0x020205);
                 
+                // 2. Camera
                 this.camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 10000);
                 this.camera.position.z = 200;
+                
+                // 3. Dynamic Lighting (Attached to Camera)
+                this.scene.add(this.camera); // Add camera to scene hierarchy
+                const camLight = new THREE.DirectionalLight(0xffffff, 1.2);
+                camLight.position.set(0, 0, 1); // Points forward relative to camera
+                this.camera.add(camLight);
+                
+                // Ambient light for shadows
+                this.scene.add(new THREE.AmbientLight(0x404040, 0.5));
 
+                // 4. Renderer
                 this.renderer = new THREE.WebGLRenderer({ antialias: true });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
                 this.renderer.setPixelRatio(window.devicePixelRatio);
                 container.appendChild(this.renderer.domElement);
 
+                // 5. Controls
                 this.controls = new OrbitControls(this.camera, this.renderer.domElement);
                 this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
                 this.controls.autoRotate = true;
                 this.controls.autoRotateSpeed = 0.5;
+                this.controls.minDistance = 60;
+                this.controls.maxDistance = 600;
 
-                // 2. Lights
-                const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-                sun.position.set(100, 50, 100);
-                this.scene.add(new THREE.AmbientLight(0x404040, 2));
-                this.scene.add(sun);
-
-                // 3. Earth
+                // 6. Earth Mesh
                 const texLoader = new THREE.TextureLoader();
-                const earthGeo = new THREE.SphereGeometry(50, 64, 64);
-                const earthMat = new THREE.MeshPhongMaterial({
-                    map: texLoader.load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg'),
-                    bumpMap: texLoader.load('https://unpkg.com/three-globe/example/img/earth-topology.png'),
-                    bumpScale: 1.5,
-                    specular: new THREE.Color(0x222222)
-                });
-                const earth = new THREE.Mesh(earthGeo, earthMat);
+                const earth = new THREE.Mesh(
+                    new THREE.SphereGeometry(50, 64, 64),
+                    new THREE.MeshPhongMaterial({
+                        map: texLoader.load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg'),
+                        bumpMap: texLoader.load('https://unpkg.com/three-globe/example/img/earth-topology.png'),
+                        bumpScale: 1.5,
+                        specular: new THREE.Color(0x111111),
+                        shininess: 5
+                    })
+                );
                 this.scene.add(earth);
                 this.scene.add(this.markerGroup);
 
-                // 4. Atmosphere
-                const atmoGeo = new THREE.SphereGeometry(52, 64, 64);
-                const atmoMat = new THREE.MeshBasicMaterial({ color: 0x0066ff, transparent: true, opacity: 0.1, side: THREE.BackSide });
-                this.scene.add(new THREE.Mesh(atmoGeo, atmoMat));
+                // Atmosphere
+                const atmo = new THREE.Mesh(
+                    new THREE.SphereGeometry(51, 64, 64),
+                    new THREE.MeshBasicMaterial({ color: 0x0044aa, transparent: true, opacity: 0.1, side: THREE.BackSide })
+                );
+                this.scene.add(atmo);
 
-                // 5. Events
+                // 7. Create "3D GS EARTH" Watermark
+                this.createTitleText();
+
+                // 8. Bind Events
                 window.addEventListener('resize', () => this.onResize());
                 window.addEventListener('pointerdown', (e) => this.onClick(e));
                 
-                // 6. Load Data
+                // 9. Load Data
                 await this.loadLocations();
                 
                 UI.showLoader(false);
                 this.animate();
             },
 
+            createTitleText: function() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1024;
+                canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+                
+                ctx.font = "bold 120px Arial, sans-serif";
+                ctx.fillStyle = "rgba(255, 255, 255, 0.15)"; 
+                ctx.textAlign = "center";
+                ctx.fillText("3D GS EARTH", 512, 160);
+                
+                const texture = new THREE.CanvasTexture(canvas);
+                const material = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0 });
+                
+                this.titleSprite = new THREE.Sprite(material);
+                this.titleSprite.scale.set(120, 30, 1);
+                this.titleSprite.position.set(0, 0, 55); // Just in front of Earth
+                this.scene.add(this.titleSprite);
+            },
+
             loadLocations: async function() {
                 try {
                     const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json`;
-                    const res = await fetch(url + "?t=" + Date.now()); // Prevent cache
-                    if(!res.ok) throw new Error("No data yet");
+                    const res = await fetch(url + "?t=" + Date.now()); // prevent cache
+                    if(!res.ok) return;
                     
-                    state.locations = await res.json();
-                    
-                    // Render Markers
+                    const list = await res.json();
+                    state.locations = list;
+
                     this.markerGroup.clear();
-                    state.locations.forEach(loc => {
+                    list.forEach(loc => {
+                        // Green Dot
                         const mesh = new THREE.Mesh(
-                            new THREE.SphereGeometry(0.6, 16, 16),
+                            new THREE.SphereGeometry(0.5, 16, 16),
                             new THREE.MeshBasicMaterial({ color: 0x00ff88 })
                         );
                         
-                        // Convert LatLon to Vector3
+                        // Math: LatLon -> Vector3
                         const phi = (90 - loc.lat) * (Math.PI / 180);
                         const theta = (loc.lon + 180) * (Math.PI / 180);
-                        const r = 50.5;
+                        const r = 50.2; // On surface
+                        
                         mesh.position.set(
                             -(r * Math.sin(phi) * Math.cos(theta)),
                             (r * Math.cos(phi)),
                             (r * Math.sin(phi) * Math.sin(theta))
                         );
-                        
                         mesh.userData = loc;
-                        
-                        // Add Glow
+
+                        // Glow Halo
                         const glow = new THREE.Mesh(
                             new THREE.SphereGeometry(1.2, 16, 16),
                             new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.3 })
                         );
                         mesh.add(glow);
-
+                        
                         this.markerGroup.add(mesh);
                     });
-
                 } catch(e) {
-                    console.log("Init empty world or error:", e);
+                    console.log("World is currently empty or init error.");
                 }
             },
 
             onClick: function(event) {
-                if(event.target.closest('#ui-layer')) return; // Ignore UI clicks
+                if(event.target.closest('#ui-layer') || event.target.closest('#ai-chat-box')) return;
 
                 const raycaster = new THREE.Raycaster();
                 const mouse = new THREE.Vector2(
@@ -289,15 +507,9 @@
                     const data = intersects[0].object.userData;
                     state.currentLoc = data;
                     
-                    // Show Info
-                    const info = document.getElementById('info-bar');
-                    info.style.display = 'block';
-                    document.getElementById('loc-title').innerText = "Found: 3D Memory";
-                    document.getElementById('loc-desc').innerText = data.desc || "No description.";
-                    
-                    // Fly to
-                    // (Simple implementation, ideally use GSAP)
-                    this.camera.position.lerp(intersects[0].object.position.clone().multiplyScalar(1.5), 0.5);
+                    document.getElementById('info-bar').style.display = 'block';
+                    document.getElementById('loc-title').innerText = "Memory Found";
+                    document.getElementById('loc-desc').innerText = data.desc || "No description provided.";
                 } else {
                     this.controls.autoRotate = true;
                     document.getElementById('info-bar').style.display = 'none';
@@ -310,44 +522,42 @@
                 const splat = document.getElementById('file-splat').files[0];
                 const desc = document.getElementById('desc-text').value;
 
-                if(!token || !photo || !splat) return alert("Fill all fields!");
+                if(!token || !photo || !splat) return alert("Please fill all fields!");
                 
-                UI.setStatus("Analyzing GPS...");
-
+                UI.setStatus("Calculating GPS & Preparing...");
+                
                 try {
-                    // 1. Extract GPS
+                    // 1. GPS
                     const gps = await exifr.gps(photo);
-                    if(!gps) throw new Error("No GPS found in photo!");
-                    
-                    UI.setStatus("Uploading to Hugging Face...");
-                    
-                    // 2. Prepare Paths
+                    if(!gps) throw new Error("No GPS data found in this photo. Please use original mobile photos.");
+
+                    // 2. Prepare Filenames
                     const ts = Date.now();
-                    const splatPath = `models/${ts}.splat`;
+                    const splatPath = `models/${ts}.splat`; // Simplified ext
                     const photoPath = `photos/${ts}.jpg`;
-                    
-                    // 3. Prepare New Entry
-                    const newEntry = {
-                        id: ts,
-                        lat: gps.latitude,
-                        lon: gps.longitude,
-                        desc: desc,
-                        splatPath: splatPath, // Store relative path
-                        photoPath: photoPath
-                    };
-                    
-                    // 4. Fetch current JSON to append
-                    // (Simple append logic - in prod use better locking)
+
+                    UI.setStatus("Uploading to Hugging Face...");
+
+                    // 3. Get Current JSON
                     let currentList = [];
                     try {
                         const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json`);
                         if(res.ok) currentList = await res.json();
                     } catch(e) {}
-                    
-                    currentList.push(newEntry);
+
+                    // 4. Append New Data
+                    currentList.push({
+                        id: ts,
+                        lat: gps.latitude,
+                        lon: gps.longitude,
+                        desc: desc,
+                        splatPath: splatPath,
+                        photoPath: photoPath
+                    });
+
                     const jsonBlob = new Blob([JSON.stringify(currentList, null, 2)], {type: "application/json"});
-                    
-                    // 5. Atomic Commit
+
+                    // 5. Commit (Atomic)
                     await commit({
                         credentials: { accessToken: token },
                         repo: { type: "dataset", name: REPO_ID },
@@ -356,14 +566,14 @@
                             { operation: "addOrUpdate", path: photoPath, content: photo },
                             { operation: "addOrUpdate", path: "locations.json", content: jsonBlob }
                         ],
-                        title: `New Splat at ${gps.latitude.toFixed(2)}, ${gps.longitude.toFixed(2)}`
+                        title: `Add new memory at ${gps.latitude.toFixed(2)}, ${gps.longitude.toFixed(2)}`
                     });
 
-                    UI.setStatus("Success! Reloading...");
+                    UI.setStatus("Success! Reloading world...");
                     setTimeout(() => {
                         UI.closeUpload();
                         this.loadLocations();
-                    }, 1000);
+                    }, 1500);
 
                 } catch(e) {
                     console.error(e);
@@ -373,49 +583,71 @@
 
             enterSplatMode: function() {
                 if(!state.currentLoc) return;
-                document.getElementById('splat-viewer').style.display = 'block';
-
-                // Resolve full URL
+                
+                const viewerDiv = document.getElementById('splat-viewer');
+                viewerDiv.style.display = 'block';
+                
                 const splatUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
                 
+                // Initialize Viewer only once
                 if(!state.viewer) {
                     state.viewer = new GaussianSplats3D.Viewer({
                         'cameraUp': [0, -1, -0.6],
                         'initialCameraPosition': [-1, -4, 6],
                         'initialCameraLookAt': [0, 4, 0],
-                        'rootElement': document.getElementById('splat-viewer'),
-                        'sharedMemoryForWebWorkers': false // Ensure compat
+                        'rootElement': viewerDiv,
+                        'sharedMemoryForWebWorkers': false
                     });
                     state.viewer.init();
                 }
                 
+                // Load Scene
                 state.viewer.addSplatScene(splatUrl, {
                     'streamView': true
                 }).then(() => {
                     state.viewer.start();
                 });
+
+                // Trigger AI Chat
+                AIChat.init(state.currentLoc);
             },
 
             animate: function() {
                 requestAnimationFrame(() => this.animate());
                 this.controls.update();
+
+                // --- Watermark Fade Logic ---
+                if (this.titleSprite) {
+                    const dist = this.camera.position.distanceTo(new THREE.Vector3(0,0,0));
+                    // Distance < 120: Opacity 0 (Hidden when close)
+                    // Distance > 220: Opacity 1 (Visible when far)
+                    let opacity = (dist - 120) / 100;
+                    opacity = Math.max(0, Math.min(1, opacity));
+                    this.titleSprite.material.opacity = opacity;
+                }
+                // ---------------------------
+
                 this.renderer.render(this.scene, this.camera);
             },
-            
+
             onResize: function() {
                 this.camera.aspect = window.innerWidth / window.innerHeight;
                 this.camera.updateProjectionMatrix();
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
             }
         };
-        window.App = App; // Expose
+        window.App = App;
 
+        // Close Buttons
         document.getElementById('close-splat').onclick = () => {
             document.getElementById('splat-viewer').style.display = 'none';
-            // Optional: dispose scene to save memory
+            AIChat.close();
+            // Optional: state.viewer.dispose() if memory is tight
         };
 
+        // Start
         App.init();
+
     </script>
 </body>
 </html>
