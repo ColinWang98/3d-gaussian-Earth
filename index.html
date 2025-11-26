@@ -3,496 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HoloEarth: 3D Gaussian World Explorer</title>
+    <title>Gaussian Earth: Community Splat World</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; color: white; }
+        #canvas-container { position: absolute; width: 100%; height: 100%; z-index: 1; }
         
         /* UI Overlay */
         #ui-layer { position: absolute; pointer-events: none; width: 100%; height: 100%; z-index: 10; }
         
+        /* Upload Button & Modal */
+        #upload-btn {
+            position: absolute; top: 20px; right: 20px; pointer-events: auto;
+            background: linear-gradient(135deg, #ff00cc, #333399);
+            border: none; padding: 10px 20px; border-radius: 30px; color: white; font-weight: bold; cursor: pointer;
+        }
+        #upload-modal {
+            display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(20, 20, 30, 0.95); padding: 30px; border-radius: 15px; border: 1px solid #444;
+            width: 300px; pointer-events: auto; backdrop-filter: blur(10px);
+        }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-size: 0.9rem; color: #aaa; }
+        input, textarea { width: 100%; background: #111; border: 1px solid #333; color: white; padding: 8px; border-radius: 5px; }
+        
         /* Bottom Bar */
         #bottom-bar {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            width: 80%; max-width: 800px;
-            background: rgba(10, 15, 30, 0.85);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            padding: 20px;
-            color: white;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: opacity 0.5s;
-            opacity: 0; /* Hidden by default */
-            pointer-events: auto;
-        }
-        .info-content h2 { margin: 0 0 5px 0; font-size: 1.2rem; letter-spacing: 1px; }
-        .info-content p { margin: 0; font-size: 0.9rem; color: #aaa; }
-        .info-meta { font-size: 0.8rem; color: #4deeea; margin-top: 5px; }
-        
-        /* AI Button */
-        .ai-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none; padding: 10px 20px; border-radius: 30px;
-            color: white; font-weight: bold; cursor: pointer;
-            box-shadow: 0 4px 15px rgba(118, 75, 162, 0.4);
+            width: 80%; max-width: 600px; background: rgba(10, 15, 30, 0.8);
+            padding: 20px; border-radius: 20px; display: none; pointer-events: auto;
+            backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
         }
 
-        /* Webcam Preview (Hidden but required for processing) */
-        #video-input { display: none; }
-
-        /* Holographic Preview Container */
-        #holo-container {
-            position: absolute;
-            top: 20%; left: 50%; transform: translateX(-50%);
-            width: 0; height: 0; /* Starts hidden */
-            border-radius: 20px;
-            overflow: hidden;
-            border: 2px solid #4deeea;
-            box-shadow: 0 0 30px rgba(77, 238, 234, 0.3);
-            background: rgba(0,0,0,0.6);
-            pointer-events: auto;
-            transition: width 0.5s, height 0.5s;
-            z-index: 20;
+        /* Splat Viewer Container */
+        #splat-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 5; display: none; pointer-events: auto; background: rgba(0,0,0,0.8);
         }
-        #holo-canvas { width: 100%; height: 100%; }
+        #close-splat {
+            position: absolute; top: 20px; left: 20px; z-index: 20;
+            background: white; color: black; border: none; padding: 5px 15px; cursor: pointer;
+        }
         
-        /* Loading */
-        #loader {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: #4deeea; font-size: 1.5rem; letter-spacing: 5px; z-index: 100;
+        #loading-overlay {
+            position: absolute; top:0; left:0; width:100%; height:100%; background:black; 
+            display:flex; justify-content:center; align-items:center; z-index: 999;
         }
     </style>
     
-    <!-- CDN Dependencies -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
-    <!-- MediaPipe Face Mesh for Head Tracking -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <!-- Libraries -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.157.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.157.0/examples/jsm/",
+            "@mkkellogg/gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.3.0/build/gaussian-splats-3d.module.js",
+            "@huggingface/hub": "https://cdn.jsdelivr.net/npm/@huggingface/hub@0.8.3/+esm"
+        }
+    }
+    </script>
+    <!-- EXIF Reader for GPS extraction -->
+    <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
 </head>
 <body>
 
-    <div id="loader">INITIALIZING SYSTEMS...</div>
-    <video id="video-input"></video>
+    <div id="loading-overlay">LOADING EARTH SYSTEM...</div>
 
     <div id="canvas-container"></div>
 
+    <!-- Real 3DGS Viewer Overlay -->
+    <div id="splat-container">
+        <button id="close-splat">← Back to Earth</button>
+        <!-- The 3DGS canvas will be injected here by the library -->
+    </div>
+
     <div id="ui-layer">
-        <!-- Holographic Preview Window -->
-        <div id="holo-container">
-            <div id="holo-canvas"></div>
+        <button id="upload-btn" onclick="document.getElementById('upload-modal').style.display='block'">+ Upload New Spot</button>
+        
+        <!-- Upload Form -->
+        <div id="upload-modal">
+            <h3>Add a Gaussian Memory</h3>
+            <div class="form-group">
+                <label>HF Write Token (Required):</label>
+                <input type="password" id="hf-token" placeholder="hf_...">
+            </div>
+            <div class="form-group">
+                <label>Cover Photo (for GPS):</label>
+                <input type="file" id="file-photo" accept="image/jpeg">
+            </div>
+            <div class="form-group">
+                <label>3D Model (.splat):</label>
+                <input type="file" id="file-splat" accept=".splat,.ply">
+            </div>
+            <div class="form-group">
+                <label>Description:</label>
+                <textarea id="desc-text" rows="2" placeholder="A busy street in..."></textarea>
+            </div>
+            <button onclick="handleUpload()" style="width:100%; background:#4deeea; border:none; padding:10px; cursor:pointer; font-weight:bold;">🚀 Launch to Orbit</button>
+            <button onclick="document.getElementById('upload-modal').style.display='none'" style="margin-top:10px; width:100%; background:transparent; border:1px solid #555; color:#aaa; cursor:pointer;">Cancel</button>
         </div>
 
+        <!-- Location Info -->
         <div id="bottom-bar">
-            <div class="info-content">
-                <h2 id="loc-name">Select a location</h2>
-                <p id="loc-desc">Explore the world through 3D Gaussian Splats.</p>
-                <div class="info-meta">
-                    <span id="loc-coords">--°N, --°E</span> | 
-                    <span id="loc-time">Local Time: --:--</span>
-                </div>
-            </div>
-            <button class="ai-btn" onclick="generateAIDescription()">✨ Ask AI</button>
+            <h2 id="loc-name" style="margin:0">Location Name</h2>
+            <p id="loc-desc" style="color:#ccc; font-size:0.9em; margin:5px 0 10px 0">...</p>
+            <button onclick="enterSplatView()" style="background:#4deeea; border:none; padding:8px 20px; border-radius:20px; cursor:pointer; font-weight:bold">👁️ Enter 3D View</button>
         </div>
     </div>
 
-<script>
-/**
- * CONFIGURATION & STATE
- */
-const config = {
-    earthRadius: 100,
-    textureUrl: 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
-    bumpUrl: 'https://unpkg.com/three-globe/example/img/earth-topology.png',
-    locations: [
-        { name: "Hong Kong Central", lat: 22.3193, lon: 114.1694, desc: "Dense urban canyon captured at night." },
-        { name: "Victoria Peak", lat: 22.2759, lon: 114.1455, desc: "Overlooking the harbor, high vegetation detail." },
-        { name: "Kowloon Walled City Park", lat: 22.3322, lon: 114.1903, desc: "Historical site with complex geometry." },
-        { name: "Tokyo Shibuya", lat: 35.6580, lon: 139.7016, desc: "Busy crossing, dynamic pedestrian capture." }
-    ]
-};
-
-let scene, camera, renderer, controls, earth, atmosphere;
-let holoScene, holoCamera, holoRenderer, holoObject;
-let pointsMesh;
-let raycaster = new THREE.Raycaster();
-let mouse = new THREE.Vector2();
-let isHoloActive = false;
-let headOffset = { x: 0, y: 0 }; // Stores head position from webcam
-
-// --- INIT MAIN APP ---
-function init() {
-    const container = document.getElementById('canvas-container');
-
-    // 1. Scene Setup
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x020205);
-    
-    // Fog for depth
-    scene.fog = new THREE.FogExp2(0x020205, 0.002);
-
-    // Camera
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
-    camera.position.z = 400;
-
-    // Renderer
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    container.appendChild(renderer.domElement);
-
-    // Controls
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.rotateSpeed = 0.5;
-    controls.minDistance = 120;
-    controls.maxDistance = 800;
-
-    // 2. Create Earth
-    createEarth();
-    createAtmosphere();
-    createStars();
-    createMarkers();
-
-    // 3. Event Listeners
-    window.addEventListener('resize', onWindowResize, false);
-    window.addEventListener('pointerdown', onMouseDown, false);
-
-    // 4. Init Holographic Preview (Secondary Scene)
-    initHoloPreview();
-
-    // 5. Start Loop
-    animate();
-    
-    // 6. Start Head Tracking
-    initHeadTracking();
-
-    document.getElementById('loader').style.display = 'none';
-}
-
-// --- EARTH & VISUALS ---
-function createEarth() {
-    const geometry = new THREE.SphereGeometry(config.earthRadius, 64, 64);
-    const textureLoader = new THREE.TextureLoader();
-    
-    const material = new THREE.MeshPhongMaterial({
-        map: textureLoader.load(config.textureUrl),
-        bumpMap: textureLoader.load(config.bumpUrl),
-        bumpScale: 2,
-        specular: new THREE.Color(0x333333),
-        shininess: 5
-    });
-
-    earth = new THREE.Mesh(geometry, material);
-    scene.add(earth);
-
-    // Ambient Light
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-    scene.add(ambientLight);
-
-    // Sun Light
-    const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    sunLight.position.set(500, 300, 500);
-    scene.add(sunLight);
-}
-
-function createAtmosphere() {
-    const geometry = new THREE.SphereGeometry(config.earthRadius + 2, 64, 64);
-    // Simple custom shader for atmosphere glow
-    const vertexShader = `
-        varying vec3 vNormal;
-        void main() {
-            vNormal = normalize(normalMatrix * normal);
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `;
-    const fragmentShader = `
-        varying vec3 vNormal;
-        void main() {
-            float intensity = pow(0.6 - dot(vNormal, vec3(0, 0, 1.0)), 4.0);
-            gl_FragColor = vec4(0.3, 0.6, 1.0, 1.0) * intensity * 1.5;
-        }
-    `;
-    const material = new THREE.ShaderMaterial({
-        vertexShader, fragmentShader,
-        blending: THREE.AdditiveBlending,
-        side: THREE.BackSide,
-        transparent: true
-    });
-    atmosphere = new THREE.Mesh(geometry, material);
-    scene.add(atmosphere);
-}
-
-function createStars() {
-    const geometry = new THREE.BufferGeometry();
-    const vertices = [];
-    for (let i = 0; i < 3000; i++) {
-        const x = (Math.random() - 0.5) * 3000;
-        const y = (Math.random() - 0.5) * 3000;
-        const z = (Math.random() - 0.5) * 3000;
-        vertices.push(x, y, z);
-    }
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    const material = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, transparent: true, opacity: 0.8 });
-    const stars = new THREE.Points(geometry, material);
-    scene.add(stars);
-}
-
-// --- MARKERS & INTERACTION ---
-function latLonToVector3(lat, lon, radius) {
-    const phi = (90 - lat) * (Math.PI / 180);
-    const theta = (lon + 180) * (Math.PI / 180);
-    const x = -(radius * Math.sin(phi) * Math.cos(theta));
-    const z = (radius * Math.sin(phi) * Math.sin(theta));
-    const y = (radius * Math.cos(phi));
-    return new THREE.Vector3(x, y, z);
-}
-
-function createMarkers() {
-    const geometry = new THREE.BufferGeometry();
-    const positions = [];
-    
-    config.locations.forEach(loc => {
-        const pos = latLonToVector3(loc.lat, loc.lon, config.earthRadius + 0.5);
-        positions.push(pos.x, pos.y, pos.z);
-        // Store data in userData is tricky for BufferGeometry, 
-        // keeping it simple: we will raycast against a group of meshes or use index matching
-    });
-
-    // Using Sprites or Individual Meshes for easier raycasting click detection
-    const markerGroup = new THREE.Group();
-    const pointMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    const pointGeo = new THREE.SphereGeometry(0.6, 8, 8); // Tiny spheres as dots
-
-    config.locations.forEach((loc, index) => {
-        const mesh = new THREE.Mesh(pointGeo, pointMat);
-        const pos = latLonToVector3(loc.lat, loc.lon, config.earthRadius + 0.5);
-        mesh.position.copy(pos);
-        mesh.userData = { ...loc, id: index };
-        
-        // Add Glow
-        const glowGeo = new THREE.SphereGeometry(1.2, 8, 8);
-        const glowMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.3 });
-        const glow = new THREE.Mesh(glowGeo, glowMat);
-        mesh.add(glow);
-        
-        markerGroup.add(mesh);
-    });
-    
-    markerGroup.name = "Markers";
-    scene.add(markerGroup);
-}
-
-function onMouseDown(event) {
-    if(event.target.closest('#bottom-bar') || event.target.closest('.ai-btn')) return;
-
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-    raycaster.setFromCamera(mouse, camera);
-    const markers = scene.getObjectByName("Markers").children;
-    const intersects = raycaster.intersectObjects(markers);
-
-    if (intersects.length > 0) {
-        const data = intersects[0].object.userData;
-        focusOnLocation(data, intersects[0].object.position);
-    }
-}
-
-function focusOnLocation(data, targetPos) {
-    // 1. Show UI
-    const bar = document.getElementById('bottom-bar');
-    bar.style.opacity = 1;
-    document.getElementById('loc-name').innerText = data.name;
-    document.getElementById('loc-desc').innerText = data.desc;
-    document.getElementById('loc-coords').innerText = `${data.lat.toFixed(2)}°N, ${data.lon.toFixed(2)}°E`;
-    
-    // Calc Local Time
-    const utc = new Date().getTime() + (new Date().getTimezoneOffset() * 60000);
-    const localTime = new Date(utc + (3600000 * (data.lon / 15)));
-    document.getElementById('loc-time').innerText = "Local Time: " + localTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-
-    // 2. Move Camera
-    const endPos = targetPos.clone().multiplyScalar(1.5); // Zoom out slightly from surface
-    gsap.to(camera.position, {
-        duration: 1.5,
-        x: endPos.x, y: endPos.y, z: endPos.z,
-        onUpdate: () => controls.update()
-    });
-
-    // 3. Open Holographic Preview
-    openHoloPreview(data);
-}
-
-// --- HOLOGRAPHIC PREVIEW (The "Gaussian Splat" Simulator) ---
-function initHoloPreview() {
-    const container = document.getElementById('holo-canvas');
-    holoScene = new THREE.Scene();
-    // Make it look like a digital reconstruction
-    holoScene.background = new THREE.Color(0x111111); 
-    
-    holoCamera = new THREE.PerspectiveCamera(50, 400/300, 0.1, 100); // Aspect ratio changes dynamically
-    holoCamera.position.z = 5;
-
-    holoRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    holoRenderer.setSize(400, 300); // Default start size
-    container.appendChild(holoRenderer.domElement);
-
-    // Placeholder Model for Gaussian Splat
-    // ideally, you would load a .ply via a SplatLoader here
-    const geo = new THREE.IcosahedronGeometry(1.5, 1);
-    const mat = new THREE.MeshWireframeMaterial({ color: 0x4deeea, thickness: 0.1 });
-    holoObject = new THREE.Mesh(geo, mat);
-    
-    // Add internal particles to simulate point cloud look
-    const ptsGeo = new THREE.BufferGeometry();
-    const pts = [];
-    for(let i=0; i<500; i++) {
-        pts.push((Math.random()-0.5)*3, (Math.random()-0.5)*3, (Math.random()-0.5)*3);
-    }
-    ptsGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    const ptsMat = new THREE.PointsMaterial({ color: 0xff00aa, size: 0.05 });
-    const cloud = new THREE.Points(ptsGeo, ptsMat);
-    holoObject.add(cloud);
-
-    holoScene.add(holoObject);
-    
-    const light = new THREE.PointLight(0xffffff, 1);
-    light.position.set(5,5,5);
-    holoScene.add(light);
-}
-
-function openHoloPreview(data) {
-    const holoUI = document.getElementById('holo-container');
-    // Expand window
-    holoUI.style.width = '400px';
-    holoUI.style.height = '300px';
-    isHoloActive = true;
-
-    // Simulate model loading effect
-    holoObject.scale.set(0,0,0);
-    gsap.to(holoObject.scale, { x:1, y:1, z:1, duration: 1, ease: "elastic.out(1, 0.5)" });
-}
-
-// --- HEAD TRACKING (MediaPipe) ---
-async function initHeadTracking() {
-    const videoElement = document.getElementById('video-input');
-    
-    const faceMesh = new FaceMesh({locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
-    }});
-
-    faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-    });
-
-    faceMesh.onResults(onFaceResults);
-
-    const cameraUtils = new Camera(videoElement, {
-        onFrame: async () => {
-            await faceMesh.send({image: videoElement});
-        },
-        width: 640,
-        height: 480
-    });
-    
-    // Request Camera Permission implicitly by starting
-    cameraUtils.start();
-}
-
-function onFaceResults(results) {
-    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        const landmarks = results.multiFaceLandmarks[0];
-        
-        // Landmark 4 is roughly the nose tip
-        // MediaPipe coords are normalized [0,1], 0.5 is center
-        const nose = landmarks[4]; 
-        
-        // Calculate offset from center (range -0.5 to 0.5)
-        // We invert X because webcam is mirrored usually
-        const dx = (nose.x - 0.5) * 2; 
-        const dy = (nose.y - 0.5) * 2;
-
-        // Smooth damping for head movement
-        headOffset.x += (dx - headOffset.x) * 0.1;
-        headOffset.y += (dy - headOffset.y) * 0.1;
-    }
-}
-
-function updateHoloWithHeadTracking() {
-    if(!isHoloActive) return;
-
-    // Parallax Effect:
-    // Move camera opposite to head movement to simulate "looking around" the object
-    // Or rotate object. Let's rotate object for clearer effect.
-    
-    // Rotate object based on head position
-    holoObject.rotation.y = headOffset.x * 1.5; // Yaw
-    holoObject.rotation.x = headOffset.y * 1.5; // Pitch
-    
-    // Subtle camera pan
-    holoCamera.position.x = -headOffset.x * 1.0;
-    holoCamera.position.y = -headOffset.y * 1.0;
-    holoCamera.lookAt(0,0,0);
-}
-
-// --- AI & EXTRAS ---
-function generateAIDescription() {
-    const name = document.getElementById('loc-name').innerText;
-    const btn = document.querySelector('.ai-btn');
-    btn.innerText = "Thinking...";
-    
-    // Mock API Call
-    setTimeout(() => {
-        const stories = [
-            `This location in ${name} features unique architectural geometry perfect for Gaussian Splatting.`,
-            `The lighting conditions here allow for high-fidelity reflection capture.`,
-            `Historical records show this area was reclaimed from the sea 50 years ago.`
-        ];
-        const randomStory = stories[Math.floor(Math.random() * stories.length)];
-        document.getElementById('loc-desc').innerText = `[AI]: ${randomStory}`;
-        btn.innerText = "✨ Ask AI";
-    }, 1000);
-}
-
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-// --- MAIN LOOP ---
-function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    
-    // Rotate Earth slowly if not interacting
-    // earth.rotation.y += 0.0005;
-    atmosphere.rotation.y += 0.0006;
-
-    // Update Holo View
-    if(isHoloActive) {
-        updateHoloWithHeadTracking();
-        // Auto rotation slightly mixed with head tracking
-        holoObject.rotation.z += 0.002; 
-        holoRenderer.render(holoScene, holoCamera);
-    }
-
-    renderer.render(scene, camera);
-}
-
-// Start
-init();
-
-</script>
+    <script type="module" src="./js/app.js"></script>
 </body>
 </html>
