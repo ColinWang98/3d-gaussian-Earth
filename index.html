@@ -3,124 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gaussian Earth: Map Picker Edition</title>
+    <title>HK Gaussian Walk: 3DGS Tracker</title>
     <style>
-        :root { --primary: #00ff88; --glass: rgba(10, 15, 30, 0.95); --ai-color: #bd34fe; }
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Roboto, sans-serif; color: white; }
-        
-        #canvas-container { position: absolute; inset: 0; z-index: 1; cursor: default; }
-        /* Picking Mode Cursor */
+        :root { --primary: #00ff88; --processing: #ffcc00; --glass: rgba(10, 15, 30, 0.95); --ai-color: #bd34fe; }
+        body { margin: 0; overflow: hidden; background: #050510; font-family: 'Segoe UI', sans-serif; color: white; }
+        #canvas-container { position: absolute; inset: 0; z-index: 1; }
         body.picking-mode #canvas-container { cursor: crosshair; }
-
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
         .pointer-auto { pointer-events: auto; }
-
-        /* Top Buttons */
-        #upload-btn {
-            position: absolute; top: 20px; right: 20px;
-            background: linear-gradient(135deg, #00c6ff, #0072ff);
-            border: none; padding: 12px 24px; border-radius: 50px;
-            color: white; font-weight: bold; cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0,114,255,0.4);
-            transition: transform 0.2s;
-        }
-        #upload-btn:hover { transform: scale(1.05); }
-
-        #settings-btn {
-            position: absolute; top: 20px; left: 20px;
-            background: rgba(255,255,255,0.1); border: 1px solid #444;
-            padding: 10px; border-radius: 50%; cursor: pointer; color: #aaa;
-        }
-        #settings-btn:hover { background: rgba(255,255,255,0.2); color: white; }
-
-        /* Picker Instruction Banner */
-        #picker-toast {
-            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            background: rgba(255, 200, 0, 0.9); color: black; font-weight: bold;
-            padding: 10px 20px; border-radius: 30px; display: none; z-index: 200;
-            pointer-events: none; box-shadow: 0 0 20px rgba(255,200,0,0.5);
-        }
-
-        /* Modal System */
-        #modal-overlay {
-            display: none; position: absolute; inset: 0;
-            background: rgba(0,0,0,0.8); backdrop-filter: blur(5px);
-            z-index: 100; justify-content: center; align-items: center;
-        }
-        .modal-box {
-            background: #1a1a2e; padding: 30px; border-radius: 16px;
-            width: 90%; max-width: 400px; border: 1px solid #333;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5); pointer-events: auto;
-            max-height: 90vh; overflow-y: auto; 
-        }
+        /* UI Elements */
+        #upload-btn { position: absolute; top: 20px; right: 20px; background: linear-gradient(135deg, #00c6ff, #0072ff); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; }
+        #settings-btn { position: absolute; top: 20px; left: 20px; background: rgba(255,255,255,0.1); border: 1px solid #444; padding: 10px; border-radius: 50%; cursor: pointer; }
+        #picker-toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(255, 200, 0, 0.9); color: black; font-weight: bold; padding: 10px 20px; border-radius: 30px; display: none; }
+        #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; justify-content: center; align-items: center; }
+        .modal-box { background: #1a1a2e; padding: 30px; border-radius: 16px; width: 90%; max-width: 400px; border: 1px solid #333; pointer-events: auto; }
         .input-group { margin-bottom: 15px; }
-        .input-row { display: flex; gap: 10px; align-items: center; } 
-        label { display: block; margin-bottom: 6px; color: #888; font-size: 0.9em; }
-        input, textarea {
-            width: 100%; box-sizing: border-box; background: #0f0f1a;
-            border: 1px solid #333; color: white; padding: 10px; border-radius: 8px;
-            font-family: inherit;
-        }
-        
-        /* Picker Button Style */
-        .btn-pick {
-            background: #333; color: var(--primary); border: 1px solid var(--primary);
-            padding: 8px 12px; border-radius: 6px; cursor: pointer; white-space: nowrap;
-        }
-        .btn-pick:hover { background: rgba(0, 255, 136, 0.1); }
-
-        .btn-submit { width: 100%; background: var(--primary); color: black; border:none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
-        .btn-cancel { width: 100%; background: transparent; border: 1px solid #444; color: #888; padding: 8px; border-radius: 8px; cursor: pointer; margin-top: 10px; }
-
-        /* Location Info Bar */
-        #info-bar {
-            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            width: 90%; max-width: 500px; background: var(--glass);
-            padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
-            display: none; transition: opacity 0.3s; backdrop-filter: blur(12px);
-        }
-        .action-btn {
-            background: var(--primary); color: #000; border: none;
-            padding: 8px 20px; border-radius: 20px; font-weight: bold; cursor: pointer;
-            float: right; margin-top: -30px;
-        }
-
-        /* Splat Viewer Overlay */
-        #splat-viewer {
-            position: absolute; inset: 0; background: #000; z-index: 50; display: none;
-        }
-        #close-splat {
-            position: absolute; top: 20px; left: 20px; z-index: 60;
-            background: white; color: black; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;
-        }
-
-        /* AI Chat Box */
-        #ai-chat-box {
-            position: absolute; bottom: 20px; right: 20px; width: 350px; height: 500px;
-            background: rgba(20, 20, 35, 0.95); border-radius: 16px; border: 1px solid var(--ai-color);
-            display: none; flex-direction: column; z-index: 70; overflow: hidden;
-            box-shadow: 0 10px 40px rgba(189, 52, 254, 0.2); backdrop-filter: blur(10px);
-        }
-        #chat-header {
-            padding: 15px; background: linear-gradient(90deg, var(--ai-color), #4b0082);
-            font-weight: bold; display: flex; justify-content: space-between; align-items: center;
-        }
-        #chat-history {
-            flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
-        }
-        .msg { padding: 10px; border-radius: 10px; max-width: 85%; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; }
-        .msg.ai { background: #332a40; color: #e0d0ff; align-self: flex-start; border-bottom-left-radius: 0; }
-        .msg.user { background: var(--ai-color); color: white; align-self: flex-end; border-bottom-right-radius: 0; }
-        #chat-input-area {
-            padding: 10px; background: #111; border-top: 1px solid #333; display: flex; gap: 10px;
-        }
-        #chat-input { flex: 1; background: #222; border: none; color: white; padding: 10px; border-radius: 20px; outline: none; }
-        #send-btn { background: var(--ai-color); border: none; color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 1.2em; }
-
-        #loader { position: absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-family: monospace; color: var(--primary); font-size: 1.2em; letter-spacing: 2px; }
-        #upload-status { color: var(--primary); font-size: 0.8em; text-align: center; height: 1.2em; margin-top: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        input, textarea { width: 100%; box-sizing: border-box; background: #0f0f1a; border: 1px solid #333; color: white; padding: 10px; border-radius: 8px; }
+        .btn-submit { width: 100%; background: var(--primary); color: black; border:none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 500px; background: var(--glass); padding: 20px; border-radius: 20px; display: none; backdrop-filter: blur(12px); }
+        .action-btn { background: var(--primary); color: #000; border: none; padding: 10px 25px; border-radius: 20px; font-weight: bold; cursor: pointer; float: right; margin-top: -30px; }
+        #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 50; display: none; }
     </style>
-
     <script type="importmap">
     {
         "imports": {
@@ -133,91 +36,34 @@
     </script>
 </head>
 <body>
-
-    <div id="loader">INITIALIZING SYSTEM...</div>
-    <div id="picker-toast">👆 Click anywhere on Earth to select location</div>
     <div id="canvas-container"></div>
+    <div id="picker-toast">📍 Click on HK Map to select location</div>
+    <div id="splat-viewer" class="pointer-auto"><button id="close-splat" style="position:absolute;top:20px;left:20px;z-index:60;padding:10px;">← EXIT</button></div>
 
-    <!-- Splat Viewer -->
-    <div id="splat-viewer" class="pointer-auto">
-        <button id="close-splat">← BACK TO ORBIT</button>
-    </div>
-
-    <!-- AI Chat -->
-    <div id="ai-chat-box" class="pointer-auto">
-        <div id="chat-header">
-            <span id="ai-persona-name">Storyteller AI</span>
-            <span style="font-size:0.8em; opacity:0.7">DeepSeek V3</span>
-        </div>
-        <div id="chat-history"></div>
-        <div id="chat-input-area">
-            <input type="text" id="chat-input" placeholder="Ask about this place..." onkeypress="if(event.key==='Enter') AIChat.send()">
-            <button id="send-btn" onclick="AIChat.send()">➤</button>
-        </div>
-    </div>
-
-    <!-- UI Layer -->
     <div id="ui-layer">
-        <button id="settings-btn" class="pointer-auto" onclick="UI.openSettings()">⚙️ API Key</button>
-        <button id="upload-btn" class="pointer-auto" onclick="UI.openUpload()">+ UPLOAD</button>
-
-        <!-- Location Info -->
+        <button id="settings-btn" class="pointer-auto" onclick="UI.openSettings()">⚙️</button>
+        <button id="upload-btn" class="pointer-auto" onclick="UI.openUpload()">+ ADD MEMORY</button>
         <div id="info-bar" class="pointer-auto">
-            <h2 id="loc-title" style="margin: 0 0 5px 0; font-size: 1.2em;">Location</h2>
-            <p id="loc-desc" style="margin: 0; color: #aaa; font-size: 0.9em;">Description</p>
-            <button class="action-btn" onclick="App.enterSplatMode()">ENTER 3D & CHAT</button>
+            <h3 id="loc-title" style="margin:0">Hong Kong Spot</h3>
+            <p id="loc-status" style="color:var(--processing);font-size:0.8em;"></p>
+            <p id="loc-desc" style="color:#aaa;"></p>
+            <button id="enter-btn" class="action-btn" onclick="App.enterSplatMode()">VIEW 3D</button>
         </div>
 
-        <!-- Upload Modal -->
         <div id="modal-overlay" class="pointer-auto">
-            <div id="upload-form" class="modal-box">
-                <h3 style="margin-top:0; color:white;">Upload Memory</h3>
-                
+            <div class="modal-box">
+                <h3>New HK Memory</h3>
+                <div class="input-group"><label>HF Token</label><input type="password" id="hf-token"></div>
                 <div class="input-group">
-                    <label>HF Write Token</label>
-                    <input type="password" id="hf-token" placeholder="hf_...">
+                    <label>Coordinates</label>
+                    <div style="display:flex;gap:5px;"><input type="number" id="lat" placeholder="Lat"><input type="number" id="lon" placeholder="Lon">
+                    <button class="pointer-auto" onclick="App.startPickerMode()" style="cursor:pointer">📍 Pick</button></div>
                 </div>
-                
-                <!-- GPS Picker UI -->
-                <div class="input-group">
-                    <label>Location Coordinates</label>
-                    <div class="input-row">
-                        <input type="number" id="gps-lat" placeholder="Lat" step="0.000001">
-                        <input type="number" id="gps-lon" placeholder="Lon" step="0.000001">
-                        <button class="btn-pick" onclick="App.startPickerMode()">📍 Pick</button>
-                    </div>
-                </div>
-
-                <div class="input-group">
-                    <label>Photo (Visual Cover)</label>
-                    <input type="file" id="file-photo" accept="image/*">
-                </div>
-                
-                <div class="input-group">
-                    <label>3D Model (.splat / .ply)</label>
-                    <input type="file" id="file-splat" accept=".splat,.ply">
-                </div>
-                
-                <div class="input-group">
-                    <label>Your Story (AI Context)</label>
-                    <textarea id="desc-text" rows="3" placeholder="Describe this place..."></textarea>
-                </div>
-                
-                <button class="btn-submit" onclick="App.handleUpload()">UPLOAD TO ORBIT</button>
-                <button class="btn-cancel" onclick="UI.closeUpload()">CANCEL</button>
-                <p id="upload-status"></p>
+                <div class="input-group"><label>Photo</label><input type="file" id="photo"></div>
+                <div class="input-group"><label>Story</label><textarea id="desc"></textarea></div>
+                <button class="btn-submit" onclick="App.handleUpload()">UPLOAD TO GPU</button>
+                <button onclick="UI.closeUpload()" style="width:100%;background:none;color:#888;border:none;margin-top:10px;cursor:pointer">Cancel</button>
             </div>
-        </div>
-
-        <!-- Settings Modal -->
-        <div id="settings-modal" class="modal-box" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); z-index: 110;">
-            <h3 style="margin-top:0">Settings</h3>
-            <div class="input-group">
-                <label>DeepSeek API Key</label>
-                <input type="password" id="deepseek-key" placeholder="sk-...">
-            </div>
-            <button class="btn-submit" onclick="UI.saveSettings()">SAVE KEY</button>
-            <button class="btn-cancel" onclick="document.getElementById('settings-modal').style.display='none'">CLOSE</button>
         </div>
     </div>
 
@@ -227,361 +73,120 @@
         import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
         import { commit } from '@huggingface/hub';
 
-        const REPO_ID = "ColinWong24/my-gaussian-world"; 
+        const REPO_ID = "ColinWong24/my-gaussian-world"; // 替换为你的仓库
+        const HK_BOUNDS = { latMin: 22.15, latMax: 22.58, lonMin: 113.83, lonMax: 114.45 };
+        const MAP_SIZE = { w: 144, h: 100 }; // 基于经纬度比例
 
-        const state = {
-            locations: [], currentLoc: null, viewer: null,
-            deepseekKey: localStorage.getItem('ds_key') || '',
-            chatHistory: [],
-            isPicking: false // New state for picking mode
-        };
+        const state = { locations: [], currentLoc: null, viewer: null, isPicking: false };
 
-        // --- UI HELPERS ---
-        const UI = {
-            openUpload: () => document.getElementById('modal-overlay').style.display = 'flex',
-            closeUpload: () => { 
-                document.getElementById('modal-overlay').style.display = 'none'; 
-                document.getElementById('upload-status').innerText = ""; 
-            },
-            openSettings: () => {
-                document.getElementById('deepseek-key').value = state.deepseekKey;
-                document.getElementById('settings-modal').style.display = 'block';
-            },
-            saveSettings: () => {
-                state.deepseekKey = document.getElementById('deepseek-key').value;
-                localStorage.setItem('ds_key', state.deepseekKey);
-                document.getElementById('settings-modal').style.display = 'none';
-                alert("API Key Saved!");
-            },
-            showLoader: (show) => document.getElementById('loader').style.display = show ? 'block' : 'none',
-            setStatus: (msg) => {
-                const el = document.getElementById('upload-status');
-                if(el) el.innerText = msg;
-            },
-            // Picker Toast Helpers
-            showPickerToast: (show) => document.getElementById('picker-toast').style.display = show ? 'block' : 'none'
-        };
-        window.UI = UI;
-
-        // --- AI CHAT LOGIC ---
-        const AIChat = {
-            init: function(locationData) {
-                state.chatHistory = []; 
-                const chatBox = document.getElementById('ai-chat-box');
-                const historyDiv = document.getElementById('chat-history');
-                chatBox.style.display = 'flex';
-                historyDiv.innerHTML = '';
-                document.getElementById('ai-persona-name').innerText = "Storyteller AI";
-
-                const systemPrompt = `
-                    You are a knowledgeable local storyteller.
-                    Current Location GPS: ${locationData.lat}, ${locationData.lon}.
-                    User's Description: "${locationData.desc || 'A mysterious place.'}".
-                    Instructions:
-                    1. Adopt a persona matching the description's vibe.
-                    2. Welcome the user to this coordinate.
-                    3. Use GPS to infer real-world context (city/landmarks).
-                    4. Keep responses concise (max 3 sentences).
-                    5. Never reveal you are an AI.
-                `;
-                state.chatHistory.push({ role: "system", content: systemPrompt });
-                this.callAPI("Hello! Introduce this place based on the description.");
-            },
-            appendMsg: function(role, text) {
-                const div = document.getElementById('chat-history');
-                const msg = document.createElement('div');
-                msg.className = `msg ${role === 'user' ? 'user' : 'ai'}`;
-                msg.innerText = text;
-                div.appendChild(msg);
-                div.scrollTop = div.scrollHeight;
-            },
-            send: function() {
-                const input = document.getElementById('chat-input');
-                const text = input.value.trim();
-                if(!text) return;
-                this.appendMsg('user', text);
-                input.value = '';
-                this.callAPI(text);
-            },
-            callAPI: async function(userText) {
-                if(!state.deepseekKey) {
-                    this.appendMsg('ai', "⚠️ Please set API Key in Settings (⚙️) top-left.");
-                    return;
-                }
-                if(userText !== "Hello! Introduce this place based on the description.") {
-                    state.chatHistory.push({ role: "user", content: userText });
-                }
-
-                const loadingId = 'typing-' + Date.now();
-                const div = document.getElementById('chat-history');
-                const loadMsg = document.createElement('div');
-                loadMsg.className = 'msg ai';
-                loadMsg.id = loadingId;
-                loadMsg.innerText = "...";
-                div.appendChild(loadMsg);
-
-                try {
-                    const response = await fetch("https://api.deepseek.com/chat/completions", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${state.deepseekKey}` },
-                        body: JSON.stringify({ model: "deepseek-chat", messages: state.chatHistory, stream: false, max_tokens: 150 })
-                    });
-                    const data = await response.json();
-                    const aiText = data.choices[0].message.content;
-                    document.getElementById(loadingId).remove();
-                    this.appendMsg('ai', aiText);
-                    state.chatHistory.push({ role: "assistant", content: aiText });
-                } catch(e) {
-                    document.getElementById(loadingId).innerText = "Error: " + e.message;
-                }
-            }
-        };
-        window.AIChat = AIChat;
-
-        // --- APP LOGIC ---
         const App = {
-            scene: null, camera: null, renderer: null, controls: null, 
-            markerGroup: new THREE.Group(), earth: null, titleSprite: null,
-
             init: async function() {
-                const container = document.getElementById('canvas-container');
                 this.scene = new THREE.Scene();
-                this.scene.background = new THREE.Color(0x020205);
-                
-                this.camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 10000);
-                this.camera.position.z = 200;
-                
-                this.scene.add(this.camera);
-                const camLight = new THREE.DirectionalLight(0xffffff, 1.2);
-                camLight.position.set(0, 0, 1);
-                this.camera.add(camLight);
-                this.scene.add(new THREE.AmbientLight(0x404040, 0.5));
-
+                this.camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000);
+                this.camera.position.set(0, -60, 150);
                 this.renderer = new THREE.WebGLRenderer({ antialias: true });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
-                container.appendChild(this.renderer.domElement);
-
+                document.getElementById('canvas-container').appendChild(this.renderer.domElement);
                 this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-                this.controls.enableDamping = true;
-                this.controls.autoRotate = true;
-                this.controls.autoRotateSpeed = 0.5;
-                this.controls.minDistance = 60;
-                this.controls.maxDistance = 600;
-
-                const texLoader = new THREE.TextureLoader();
-                this.earth = new THREE.Mesh(
-                    new THREE.SphereGeometry(50, 64, 64),
-                    new THREE.MeshPhongMaterial({
-                        map: texLoader.load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg'),
-                        bumpMap: texLoader.load('https://unpkg.com/three-globe/example/img/earth-topology.png'),
-                        bumpScale: 1.5, specular: new THREE.Color(0x111111), shininess: 5
-                    })
-                );
-                this.scene.add(this.earth);
+                
+                // 加载香港地图平面
+                const tex = new THREE.TextureLoader().load('https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Hong_Kong_Location_Map.svg/1200px-Hong_Kong_Location_Map.svg.png');
+                this.map = new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE.w, MAP_SIZE.h), new THREE.MeshBasicMaterial({ map: tex }));
+                this.scene.add(this.map);
+                
+                this.markerGroup = new THREE.Group();
                 this.scene.add(this.markerGroup);
 
-                this.createTitleText();
-
-                window.addEventListener('resize', () => this.onResize());
                 window.addEventListener('pointerdown', (e) => this.onClick(e));
-                
                 await this.loadLocations();
-                UI.showLoader(false);
                 this.animate();
             },
 
-            createTitleText: function() {
-                const canvas = document.createElement('canvas');
-                canvas.width = 1024; canvas.height = 256;
-                const ctx = canvas.getContext('2d');
-                ctx.font = "bold 120px Arial, sans-serif";
-                ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
-                ctx.textAlign = "center";
-                ctx.fillText("3D GS EARTH", 512, 160);
-                const texture = new THREE.CanvasTexture(canvas);
-                const material = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0 });
-                this.titleSprite = new THREE.Sprite(material);
-                this.titleSprite.scale.set(120, 30, 1);
-                this.titleSprite.position.set(0, 0, 55);
-                this.scene.add(this.titleSprite);
+            latLonToPos: (lat, lon) => {
+                const x = ((lon - HK_BOUNDS.lonMin) / (HK_BOUNDS.lonMax - HK_BOUNDS.lonMin) - 0.5) * MAP_SIZE.w;
+                const y = ((lat - HK_BOUNDS.latMin) / (HK_BOUNDS.latMax - HK_BOUNDS.latMin) - 0.5) * MAP_SIZE.h;
+                return new THREE.Vector3(x, y, 1);
             },
 
             loadLocations: async function() {
-                try {
-                    const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json`;
-                    const res = await fetch(url + "?t=" + Date.now());
-                    if(!res.ok) return;
-                    const list = await res.json();
-                    state.locations = list;
-                    this.markerGroup.clear();
-                    list.forEach(loc => {
-                        const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ff88 }));
-                        const phi = (90 - loc.lat) * (Math.PI / 180);
-                        const theta = (loc.lon + 180) * (Math.PI / 180);
-                        const r = 50.2;
-                        mesh.position.set(-(r*Math.sin(phi)*Math.cos(theta)), r*Math.cos(phi), r*Math.sin(phi)*Math.sin(theta));
-                        mesh.userData = loc;
-                        mesh.add(new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.3 })));
-                        this.markerGroup.add(mesh);
-                    });
-                } catch(e) { console.log("Empty world"); }
+                const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
+                state.locations = await res.json();
+                this.markerGroup.clear();
+                state.locations.forEach(loc => {
+                    const mesh = new THREE.Mesh(new THREE.SphereGeometry(1.5), new THREE.MeshBasicMaterial({ color: loc.status==='processing'?0xffcc00:0x00ff88 }));
+                    mesh.position.copy(this.latLonToPos(loc.lat, loc.lon));
+                    mesh.userData = loc;
+                    this.markerGroup.add(mesh);
+                });
             },
 
-            // === GPS PICKER LOGIC ===
-            startPickerMode: function() {
-                state.isPicking = true;
-                document.body.classList.add('picking-mode');
-                document.getElementById('modal-overlay').style.display = 'none'; // Hide modal
-                UI.showPickerToast(true);
-                this.controls.autoRotate = false; // Stop rotation for easier picking
-            },
+            startPickerMode: function() { state.isPicking = true; document.getElementById('modal-overlay').style.display='none'; document.getElementById('picker-toast').style.display='block'; },
 
-            resolvePicker: function(point) {
-                state.isPicking = false;
-                document.body.classList.remove('picking-mode');
-                UI.showPickerToast(false);
-                
-                // Math: Vector3 -> Lat/Lon
-                // r = 50 (radius of earth)
-                // x = -r * sin(phi) * cos(theta)
-                // y = r * cos(phi)
-                // z = r * sin(phi) * sin(theta)
-                
-                // Normalizing
-                const r = 50;
-                const phi = Math.acos(point.y / r); // Lat angle
-                const theta = Math.atan2(point.z, -point.x); // Lon angle (careful with axes)
+            onClick: function(e) {
+                if(e.target.closest('.pointer-auto')) return;
+                const ray = new THREE.Raycaster();
+                const m = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
+                ray.setFromCamera(m, this.camera);
 
-                const lat = 90 - (phi * 180 / Math.PI);
-                let lon = (theta * 180 / Math.PI) - 180;
-                
-                // Normalize lon to -180 to 180 if needed, though math usually handles it
-                if(lon < -180) lon += 360;
-                
-                // Fill inputs
-                document.getElementById('gps-lat').value = lat.toFixed(4);
-                document.getElementById('gps-lon').value = lon.toFixed(4);
-                
-                // Re-open modal
-                document.getElementById('modal-overlay').style.display = 'flex';
-            },
-            // ========================
-
-            onClick: function(event) {
-                // If interacting with UI, ignore
-                if(event.target.closest('#ui-layer') || event.target.closest('#ai-chat-box')) return;
-
-                const raycaster = new THREE.Raycaster();
-                const mouse = new THREE.Vector2(
-                    (event.clientX / window.innerWidth) * 2 - 1,
-                    -(event.clientY / window.innerHeight) * 2 + 1
-                );
-                raycaster.setFromCamera(mouse, this.camera);
-
-                // 1. Check for Picker Mode (Click on Earth)
                 if(state.isPicking) {
-                    const earthIntersects = raycaster.intersectObject(this.earth);
-                    if(earthIntersects.length > 0) {
-                        this.resolvePicker(earthIntersects[0].point);
+                    const hits = ray.intersectObject(this.map);
+                    if(hits.length>0) {
+                        const p = hits[0].point;
+                        const lon = ((p.x/MAP_SIZE.w)+0.5)*(HK_BOUNDS.lonMax-HK_BOUNDS.lonMin)+HK_BOUNDS.lonMin;
+                        const lat = ((p.y/MAP_SIZE.h)+0.5)*(HK_BOUNDS.latMax-HK_BOUNDS.latMin)+HK_BOUNDS.latMin;
+                        document.getElementById('lat').value = lat.toFixed(4);
+                        document.getElementById('lon').value = lon.toFixed(4);
+                        state.isPicking=false; document.getElementById('picker-toast').style.display='none'; document.getElementById('modal-overlay').style.display='flex';
                     }
-                    return; // Stop here
-                }
-
-                // 2. Normal Mode (Click on Markers)
-                const intersects = raycaster.intersectObjects(this.markerGroup.children);
-                if(intersects.length > 0) {
-                    this.controls.autoRotate = false;
-                    state.currentLoc = intersects[0].object.userData;
-                    document.getElementById('info-bar').style.display = 'block';
-                    document.getElementById('loc-title').innerText = "Memory Found";
-                    document.getElementById('loc-desc').innerText = state.currentLoc.desc || "No description.";
                 } else {
-                    this.controls.autoRotate = true;
-                    document.getElementById('info-bar').style.display = 'none';
+                    const hits = ray.intersectObjects(this.markerGroup.children);
+                    if(hits.length>0) {
+                        state.currentLoc = hits[0].object.userData;
+                        document.getElementById('info-bar').style.display='block';
+                        document.getElementById('loc-desc').innerText = state.currentLoc.desc;
+                        document.getElementById('loc-status').innerText = state.currentLoc.status==='processing'?'⌛ GPU Processing...':'';
+                    }
                 }
             },
 
             handleUpload: async function() {
                 const token = document.getElementById('hf-token').value;
-                const lat = parseFloat(document.getElementById('gps-lat').value);
-                const lon = parseFloat(document.getElementById('gps-lon').value);
-                const photo = document.getElementById('file-photo').files[0];
-                const splat = document.getElementById('file-splat').files[0];
-                const desc = document.getElementById('desc-text').value;
-
-                if(!token || !photo || !splat || isNaN(lat) || isNaN(lon)) return alert("Please fill all fields!");
+                const file = document.getElementById('photo').files[0];
+                const lat = parseFloat(document.getElementById('lat').value);
+                const lon = parseFloat(document.getElementById('lon').value);
+                const ts = Date.now();
+                const path = `inputs/${ts}.jpg`;
                 
-                UI.setStatus("Uploading...");
-                try {
-                    const ts = Date.now();
-                    const splatPath = `models/${ts}.splat`;
-                    const photoPath = `photos/${ts}.jpg`;
-
-                    let currentList = [];
-                    try {
-                        const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json`);
-                        if(res.ok) currentList = await res.json();
-                    } catch(e) {}
-
-                    currentList.push({ id: ts, lat: lat, lon: lon, desc: desc, splatPath, photoPath });
-
-                    await commit({
-                        credentials: { accessToken: token },
-                        repo: { type: "dataset", name: REPO_ID },
-                        operations: [
-                            { operation: "addOrUpdate", path: splatPath, content: splat },
-                            { operation: "addOrUpdate", path: photoPath, content: photo },
-                            { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(currentList, null, 2)], {type: "application/json"}) }
-                        ],
-                        title: `New memory at ${lat}, ${lon}`
-                    });
-
-                    UI.setStatus("Success! Reloading...");
-                    setTimeout(() => { UI.closeUpload(); this.loadLocations(); }, 1500);
-                } catch(e) {
-                    UI.setStatus("Error: " + e.message);
-                }
+                state.locations.push({ id: ts, lat, lon, desc: document.getElementById('desc').value, photoPath: path, splatPath: "", status: "processing" });
+                
+                await commit({
+                    credentials: { accessToken: token },
+                    repo: { type: "dataset", name: REPO_ID },
+                    operations: [
+                        { operation: "addOrUpdate", path: path, content: file },
+                        { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(state.locations, null, 2)], {type:"application/json"}) }
+                    ],
+                    title: `HK Task ${ts}`
+                });
+                location.reload();
             },
 
             enterSplatMode: function() {
-                if(!state.currentLoc) return;
-                document.getElementById('splat-viewer').style.display = 'block';
-                const splatUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
+                if(!state.currentLoc || state.currentLoc.status==='processing') return;
+                document.getElementById('splat-viewer').style.display='block';
+                const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
                 if(!state.viewer) {
-                    state.viewer = new GaussianSplats3D.Viewer({
-                        'cameraUp': [0, -1, -0.6], 'initialCameraPosition': [-1, -4, 6], 'initialCameraLookAt': [0, 4, 0],
-                        'rootElement': document.getElementById('splat-viewer')
-                    });
+                    state.viewer = new GaussianSplats3D.Viewer({ 'cameraUp':[0,-1,-0.6], 'initialCameraPosition':[-1,-4,6], 'rootElement':document.getElementById('splat-viewer') });
                     state.viewer.init();
                 }
-                state.viewer.addSplatScene(splatUrl, { 'streamView': true }).then(() => state.viewer.start());
-                AIChat.init(state.currentLoc);
+                state.viewer.addSplatScene(url, {'streamView':true}).then(()=>state.viewer.start());
             },
 
-            animate: function() {
-                requestAnimationFrame(() => this.animate());
-                this.controls.update();
-                if (this.titleSprite) {
-                    const dist = this.camera.position.distanceTo(new THREE.Vector3(0,0,0));
-                    let opacity = (dist - 120) / 100;
-                    this.titleSprite.material.opacity = Math.max(0, Math.min(1, opacity));
-                }
-                this.renderer.render(this.scene, this.camera);
-            },
-            onResize: function() {
-                this.camera.aspect = window.innerWidth / window.innerHeight;
-                this.camera.updateProjectionMatrix();
-                this.renderer.setSize(window.innerWidth, window.innerHeight);
-            }
+            animate: function() { requestAnimationFrame(()=>this.animate()); this.renderer.render(this.scene, this.camera); }
         };
-        window.App = App;
-
-        document.getElementById('close-splat').onclick = () => {
-            document.getElementById('splat-viewer').style.display = 'none';
-            document.getElementById('ai-chat-box').style.display = 'none';
-        };
-
+        document.getElementById('close-splat').onclick = () => document.getElementById('splat-viewer').style.display='none';
         App.init();
+        window.UI = { openUpload:()=>document.getElementById('modal-overlay').style.display='flex', closeUpload:()=>document.getElementById('modal-overlay').style.display='none' };
     </script>
 </body>
 </html>
