@@ -3,24 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HK Gaussian Walk: 3DGS Tracker</title>
+    <title>HK 3DGS Tracker | 香港步踪</title>
     <style>
-        :root { --primary: #00ff88; --processing: #ffcc00; --glass: rgba(10, 15, 30, 0.95); --ai-color: #bd34fe; }
-        body { margin: 0; overflow: hidden; background: #050510; font-family: 'Segoe UI', sans-serif; color: white; }
+        :root { --primary: #00ff88; --processing: #ffcc00; --glass: rgba(10, 15, 30, 0.9); --ai-color: #bd34fe; }
+        body { margin: 0; overflow: hidden; background: #020205; font-family: 'Segoe UI', system-ui, sans-serif; color: white; }
         #canvas-container { position: absolute; inset: 0; z-index: 1; }
         body.picking-mode #canvas-container { cursor: crosshair; }
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
         .pointer-auto { pointer-events: auto; }
-        /* UI Elements */
-        #upload-btn { position: absolute; top: 20px; right: 20px; background: linear-gradient(135deg, #00c6ff, #0072ff); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; }
-        #settings-btn { position: absolute; top: 20px; left: 20px; background: rgba(255,255,255,0.1); border: 1px solid #444; padding: 10px; border-radius: 50%; cursor: pointer; }
-        #picker-toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(255, 200, 0, 0.9); color: black; font-weight: bold; padding: 10px 20px; border-radius: 30px; display: none; }
-        #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; justify-content: center; align-items: center; }
-        .modal-box { background: #1a1a2e; padding: 30px; border-radius: 16px; width: 90%; max-width: 400px; border: 1px solid #333; pointer-events: auto; }
-        .input-group { margin-bottom: 15px; }
-        input, textarea { width: 100%; box-sizing: border-box; background: #0f0f1a; border: 1px solid #333; color: white; padding: 10px; border-radius: 8px; }
-        .btn-submit { width: 100%; background: var(--primary); color: black; border:none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 500px; background: var(--glass); padding: 20px; border-radius: 20px; display: none; backdrop-filter: blur(12px); }
+        
+        /* UI Buttons */
+        #upload-btn { position: absolute; top: 20px; right: 20px; background: linear-gradient(135deg, #00c6ff, #0072ff); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(0,114,255,0.3); transition: 0.2s; }
+        #upload-btn:hover { transform: scale(1.05); }
+        #picker-toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(255, 200, 0, 0.95); color: black; font-weight: bold; padding: 10px 25px; border-radius: 30px; display: none; z-index: 100; }
+
+        /* Modals */
+        #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-index: 100; justify-content: center; align-items: center; }
+        .modal-box { background: #151525; padding: 25px; border-radius: 16px; width: 90%; max-width: 400px; border: 1px solid #333; pointer-events: auto; }
+        .input-group { margin-bottom: 12px; }
+        label { display: block; font-size: 0.85em; color: #888; margin-bottom: 5px; }
+        input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 10px; border-radius: 8px; }
+        .btn-submit { width: 100%; background: var(--primary); color: black; border:none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        
+        /* Info Panel */
+        #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 480px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); display: none; }
         .action-btn { background: var(--primary); color: #000; border: none; padding: 10px 25px; border-radius: 20px; font-weight: bold; cursor: pointer; float: right; margin-top: -30px; }
         #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 50; display: none; }
     </style>
@@ -37,32 +43,35 @@
 </head>
 <body>
     <div id="canvas-container"></div>
-    <div id="picker-toast">📍 Click on HK Map to select location</div>
-    <div id="splat-viewer" class="pointer-auto"><button id="close-splat" style="position:absolute;top:20px;left:20px;z-index:60;padding:10px;">← EXIT</button></div>
+    <div id="picker-toast">📍 点击地图选择香港位置</div>
+    <div id="splat-viewer" class="pointer-auto"><button id="close-splat" style="position:absolute;top:20px;left:20px;z-index:60;padding:10px;cursor:pointer;">← 返回地图</button></div>
 
     <div id="ui-layer">
-        <button id="settings-btn" class="pointer-auto" onclick="UI.openSettings()">⚙️</button>
-        <button id="upload-btn" class="pointer-auto" onclick="UI.openUpload()">+ ADD MEMORY</button>
+        <button id="upload-btn" class="pointer-auto" onclick="UI.openUpload()">+ 新增模型任务</button>
+        
         <div id="info-bar" class="pointer-auto">
-            <h3 id="loc-title" style="margin:0">Hong Kong Spot</h3>
-            <p id="loc-status" style="color:var(--processing);font-size:0.8em;"></p>
-            <p id="loc-desc" style="color:#aaa;"></p>
-            <button id="enter-btn" class="action-btn" onclick="App.enterSplatMode()">VIEW 3D</button>
+            <h3 id="loc-title" style="margin:0">香港地点</h3>
+            <p id="loc-status" style="color:var(--processing); font-size:0.85em; margin:5px 0;"></p>
+            <p id="loc-desc" style="color:#aaa; font-size:0.9em;"></p>
+            <button id="enter-btn" class="action-btn" onclick="App.enterSplatMode()">进入 3D 场景</button>
         </div>
 
         <div id="modal-overlay" class="pointer-auto">
             <div class="modal-box">
-                <h3>New HK Memory</h3>
-                <div class="input-group"><label>HF Token</label><input type="password" id="hf-token"></div>
+                <h3 style="margin-top:0">上传图片至 GPU 处理</h3>
+                <div class="input-group"><label>HF Write Token</label><input type="password" id="hf-token" placeholder="hf_..."></div>
                 <div class="input-group">
-                    <label>Coordinates</label>
-                    <div style="display:flex;gap:5px;"><input type="number" id="lat" placeholder="Lat"><input type="number" id="lon" placeholder="Lon">
-                    <button class="pointer-auto" onclick="App.startPickerMode()" style="cursor:pointer">📍 Pick</button></div>
+                    <label>坐标位置 (Lat, Lon)</label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="number" id="lat" placeholder="纬度" step="0.0001">
+                        <input type="number" id="lon" placeholder="经度" step="0.0001">
+                        <button onclick="App.startPickerMode()" style="background:#333; color:white; border:1px solid #555; border-radius:8px; padding:0 15px; cursor:pointer;">📍 拾取</button>
+                    </div>
                 </div>
-                <div class="input-group"><label>Photo</label><input type="file" id="photo"></div>
-                <div class="input-group"><label>Story</label><textarea id="desc"></textarea></div>
-                <button class="btn-submit" onclick="App.handleUpload()">UPLOAD TO GPU</button>
-                <button onclick="UI.closeUpload()" style="width:100%;background:none;color:#888;border:none;margin-top:10px;cursor:pointer">Cancel</button>
+                <div class="input-group"><label>选择原始图片 (.jpg / .png)</label><input type="file" id="photo" accept="image/*"></div>
+                <div class="input-group"><label>地点描述</label><textarea id="desc" rows="3" placeholder="描述此处的风景..."></textarea></div>
+                <button class="btn-submit" onclick="App.handleUpload()">开始上传</button>
+                <button onclick="UI.closeUpload()" style="width:100%; background:none; color:#888; border:none; margin-top:12px; cursor:pointer;">取消</button>
             </div>
         </div>
     </div>
@@ -73,27 +82,40 @@
         import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
         import { commit } from '@huggingface/hub';
 
-        const REPO_ID = "ColinWong24/my-gaussian-world"; // 替换为你的仓库
-        const HK_BOUNDS = { latMin: 22.15, latMax: 22.58, lonMin: 113.83, lonMax: 114.45 };
-        const MAP_SIZE = { w: 144, h: 100 }; // 基于经纬度比例
+        // ★ 配置：请修改为你的仓库名
+        const REPO_ID = "ColinWong24/my-gaussian-world"; 
+        
+        // 香港地理边界 (与 Yandex 静态图 z=10 范围匹配)
+        const HK_BOUNDS = { latMin: 22.15, latMax: 22.50, lonMin: 113.85, lonMax: 114.45 };
+        const MAP_SIZE = { w: 150, h: 100 };
 
         const state = { locations: [], currentLoc: null, viewer: null, isPicking: false };
 
         const App = {
             init: async function() {
                 this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x020205);
+                
                 this.camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000);
                 this.camera.position.set(0, -60, 150);
+                
                 this.renderer = new THREE.WebGLRenderer({ antialias: true });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
                 document.getElementById('canvas-container').appendChild(this.renderer.domElement);
+                
                 this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-                
-                // 加载香港地图平面
-                const tex = new THREE.TextureLoader().load('https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Hong_Kong_Location_Map.svg/1200px-Hong_Kong_Location_Map.svg.png');
-                this.map = new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE.w, MAP_SIZE.h), new THREE.MeshBasicMaterial({ map: tex }));
-                this.scene.add(this.map);
-                
+                this.controls.enableDamping = true;
+                this.controls.maxPolarAngle = Math.PI / 2.2;
+
+                // 加载稳定的静态地图
+                const mapUrl = 'https://static-maps.yandex.ru/1.x/?ll=114.17,22.32&z=10&l=map&size=650,450&lang=en_US';
+                const texLoader = new THREE.TextureLoader();
+                texLoader.load(mapUrl, (texture) => {
+                    const material = new THREE.MeshBasicMaterial({ map: texture });
+                    this.mapPlane = new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE.w, MAP_SIZE.h), material);
+                    this.scene.add(this.mapPlane);
+                });
+
                 this.markerGroup = new THREE.Group();
                 this.scene.add(this.markerGroup);
 
@@ -105,22 +127,38 @@
             latLonToPos: (lat, lon) => {
                 const x = ((lon - HK_BOUNDS.lonMin) / (HK_BOUNDS.lonMax - HK_BOUNDS.lonMin) - 0.5) * MAP_SIZE.w;
                 const y = ((lat - HK_BOUNDS.latMin) / (HK_BOUNDS.latMax - HK_BOUNDS.latMin) - 0.5) * MAP_SIZE.h;
-                return new THREE.Vector3(x, y, 1);
+                return new THREE.Vector3(x, y, 1.5); // 浮在地图上方
             },
 
             loadLocations: async function() {
-                const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
-                state.locations = await res.json();
-                this.markerGroup.clear();
-                state.locations.forEach(loc => {
-                    const mesh = new THREE.Mesh(new THREE.SphereGeometry(1.5), new THREE.MeshBasicMaterial({ color: loc.status==='processing'?0xffcc00:0x00ff88 }));
-                    mesh.position.copy(this.latLonToPos(loc.lat, loc.lon));
-                    mesh.userData = loc;
-                    this.markerGroup.add(mesh);
-                });
+                try {
+                    const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
+                    if(!res.ok) return;
+                    state.locations = await res.json();
+                    this.markerGroup.clear();
+                    state.locations.forEach(loc => {
+                        const isReady = loc.status !== "processing";
+                        const mesh = new THREE.Mesh(
+                            new THREE.SphereGeometry(1.8, 16, 16), 
+                            new THREE.MeshBasicMaterial({ color: isReady ? 0x00ff88 : 0xffcc00 })
+                        );
+                        mesh.position.copy(this.latLonToPos(loc.lat, loc.lon));
+                        mesh.userData = loc;
+                        
+                        // 光圈效果
+                        const ring = new THREE.Mesh(new THREE.RingGeometry(2.2, 2.6, 32), new THREE.MeshBasicMaterial({ color: isReady ? 0x00ff88 : 0xffcc00, transparent:true, opacity:0.4 }));
+                        mesh.add(ring);
+                        
+                        this.markerGroup.add(mesh);
+                    });
+                } catch(e) { console.warn("No database found yet."); }
             },
 
-            startPickerMode: function() { state.isPicking = true; document.getElementById('modal-overlay').style.display='none'; document.getElementById('picker-toast').style.display='block'; },
+            startPickerMode: function() { 
+                state.isPicking = true; 
+                document.getElementById('modal-overlay').style.display = 'none'; 
+                document.getElementById('picker-toast').style.display = 'block'; 
+            },
 
             onClick: function(e) {
                 if(e.target.closest('.pointer-auto')) return;
@@ -128,65 +166,97 @@
                 const m = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
                 ray.setFromCamera(m, this.camera);
 
-                if(state.isPicking) {
-                    const hits = ray.intersectObject(this.map);
-                    if(hits.length>0) {
+                if(state.isPicking && this.mapPlane) {
+                    const hits = ray.intersectObject(this.mapPlane);
+                    if(hits.length > 0) {
                         const p = hits[0].point;
                         const lon = ((p.x/MAP_SIZE.w)+0.5)*(HK_BOUNDS.lonMax-HK_BOUNDS.lonMin)+HK_BOUNDS.lonMin;
                         const lat = ((p.y/MAP_SIZE.h)+0.5)*(HK_BOUNDS.latMax-HK_BOUNDS.latMin)+HK_BOUNDS.latMin;
                         document.getElementById('lat').value = lat.toFixed(4);
                         document.getElementById('lon').value = lon.toFixed(4);
-                        state.isPicking=false; document.getElementById('picker-toast').style.display='none'; document.getElementById('modal-overlay').style.display='flex';
+                        state.isPicking = false; 
+                        document.getElementById('picker-toast').style.display = 'none'; 
+                        document.getElementById('modal-overlay').style.display = 'flex';
                     }
                 } else {
                     const hits = ray.intersectObjects(this.markerGroup.children);
-                    if(hits.length>0) {
+                    if(hits.length > 0) {
                         state.currentLoc = hits[0].object.userData;
-                        document.getElementById('info-bar').style.display='block';
+                        document.getElementById('info-bar').style.display = 'block';
+                        document.getElementById('loc-title').innerText = "选定记忆点";
                         document.getElementById('loc-desc').innerText = state.currentLoc.desc;
-                        document.getElementById('loc-status').innerText = state.currentLoc.status==='processing'?'⌛ GPU Processing...':'';
+                        document.getElementById('loc-status').innerText = state.currentLoc.status === 'processing' ? '⌛ GPU 正在排队处理中...' : '✅ 3D 模型已就绪';
+                        const btn = document.getElementById('enter-btn');
+                        btn.style.opacity = state.currentLoc.status === 'processing' ? '0.5' : '1';
+                        btn.disabled = state.currentLoc.status === 'processing';
+                    } else {
+                        document.getElementById('info-bar').style.display = 'none';
                     }
                 }
             },
 
             handleUpload: async function() {
                 const token = document.getElementById('hf-token').value;
-                const file = document.getElementById('photo').files[0];
+                const photoFile = document.getElementById('photo').files[0];
                 const lat = parseFloat(document.getElementById('lat').value);
                 const lon = parseFloat(document.getElementById('lon').value);
+                const desc = document.getElementById('desc').value;
+
+                if(!token || !photoFile || isNaN(lat)) return alert("请填写完整信息及 Token！");
+                
                 const ts = Date.now();
-                const path = `inputs/${ts}.jpg`;
+                const photoPath = `inputs/${ts}_${photoFile.name}`;
                 
-                state.locations.push({ id: ts, lat, lon, desc: document.getElementById('desc').value, photoPath: path, splatPath: "", status: "processing" });
+                state.locations.push({ id: ts, lat, lon, desc, photoPath, splatPath: "", status: "processing" });
                 
-                await commit({
-                    credentials: { accessToken: token },
-                    repo: { type: "dataset", name: REPO_ID },
-                    operations: [
-                        { operation: "addOrUpdate", path: path, content: file },
-                        { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(state.locations, null, 2)], {type:"application/json"}) }
-                    ],
-                    title: `HK Task ${ts}`
-                });
-                location.reload();
+                try {
+                    await commit({
+                        credentials: { accessToken: token },
+                        repo: { type: "dataset", name: REPO_ID },
+                        operations: [
+                            { operation: "addOrUpdate", path: photoPath, content: photoFile },
+                            { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(state.locations, null, 2)], {type:"application/json"}) }
+                        ],
+                        title: `新增任务: ${desc.substring(0,10)}...`
+                    });
+                    alert("上传成功！GPU 脚本将在下次轮询时开始处理。");
+                    location.reload();
+                } catch(e) { alert("上传失败: " + e.message); }
             },
 
             enterSplatMode: function() {
-                if(!state.currentLoc || state.currentLoc.status==='processing') return;
-                document.getElementById('splat-viewer').style.display='block';
+                if(!state.currentLoc || state.currentLoc.status === 'processing') return;
+                document.getElementById('splat-viewer').style.display = 'block';
                 const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
+                
                 if(!state.viewer) {
-                    state.viewer = new GaussianSplats3D.Viewer({ 'cameraUp':[0,-1,-0.6], 'initialCameraPosition':[-1,-4,6], 'rootElement':document.getElementById('splat-viewer') });
+                    state.viewer = new GaussianSplats3D.Viewer({ 
+                        'cameraUp': [0, -1, -0.6], 
+                        'initialCameraPosition': [-1, -4, 6], 
+                        'rootElement': document.getElementById('splat-viewer') 
+                    });
                     state.viewer.init();
                 }
-                state.viewer.addSplatScene(url, {'streamView':true}).then(()=>state.viewer.start());
+                state.viewer.addSplatScene(url, {'streamView': true}).then(() => state.viewer.start());
             },
 
-            animate: function() { requestAnimationFrame(()=>this.animate()); this.renderer.render(this.scene, this.camera); }
+            animate: function() { 
+                requestAnimationFrame(() => this.animate()); 
+                this.controls.update();
+                this.renderer.render(this.scene, this.camera); 
+            }
         };
-        document.getElementById('close-splat').onclick = () => document.getElementById('splat-viewer').style.display='none';
+
+        document.getElementById('close-splat').onclick = () => {
+            document.getElementById('splat-viewer').style.display = 'none';
+        };
+
         App.init();
-        window.UI = { openUpload:()=>document.getElementById('modal-overlay').style.display='flex', closeUpload:()=>document.getElementById('modal-overlay').style.display='none' };
+        window.UI = { 
+            openUpload: () => document.getElementById('modal-overlay').style.display = 'flex', 
+            closeUpload: () => document.getElementById('modal-overlay').style.display = 'none' 
+        };
+        window.App = App;
     </script>
 </body>
 </html>
