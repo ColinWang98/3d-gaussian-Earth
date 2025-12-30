@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HK 3DGS Explorer | 香港动态步踪</title>
+    <title>HK 3DGS Tracker | 香港步踪</title>
     <style>
         :root { --primary: #00ff88; --processing: #ffcc00; --glass: rgba(10, 15, 30, 0.9); }
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', system-ui, sans-serif; color: white; }
@@ -13,12 +13,17 @@
         
         /* UI Components */
         #upload-btn { position: absolute; top: 20px; right: 20px; background: linear-gradient(135deg, #00c6ff, #0072ff); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(0,114,255,0.3); }
-        #picker-toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(255, 200, 0, 0.95); color: black; font-weight: bold; padding: 10px 25px; border-radius: 30px; display: none; }
-        #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-index: 100; justify-content: center; align-items: center; }
+        #picker-toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(255, 200, 0, 0.95); color: black; font-weight: bold; padding: 10px 25px; border-radius: 30px; display: none; z-index: 100; }
+        
+        /* Modals */
+        #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 100; justify-content: center; align-items: center; }
         .modal-box { background: #151525; padding: 25px; border-radius: 16px; width: 90%; max-width: 400px; border: 1px solid #333; pointer-events: auto; }
         .input-group { margin-bottom: 12px; }
+        label { display: block; font-size: 0.85em; color: #888; margin-bottom: 5px; }
         input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 10px; border-radius: 8px; }
-        .btn-submit { width: 100%; background: var(--primary); color: black; border:none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        .btn-submit { width: 100%; background: var(--primary); color: black; border:none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        
+        /* Info Bar */
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 480px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); display: none; }
         .action-btn { background: var(--primary); color: #000; border: none; padding: 10px 25px; border-radius: 20px; font-weight: bold; cursor: pointer; float: right; margin-top: -30px; }
         #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 50; display: none; }
@@ -37,192 +42,27 @@
 </head>
 <body>
     <div id="canvas-container"></div>
-    <div id="picker-toast">📍 请直接在地图上点击位置...</div>
+    <div id="picker-toast">📍 请直接点击地图上的位置...</div>
     <div id="splat-viewer" class="pointer-auto"><button id="close-splat" style="position:absolute;top:20px;left:20px;z-index:60;padding:10px;cursor:pointer;">← 返回地图</button></div>
 
     <div id="ui-layer">
-        <button id="upload-btn" class="pointer-auto" onclick="UI.openUpload()">+ 新增 3D 扫描任务</button>
+        <button id="upload-btn" class="pointer-auto" onclick="UI.openUpload()">+ 新增 3D 重建任务</button>
         <div id="info-bar" class="pointer-auto">
             <h3 id="loc-title" style="margin:0">香港地点</h3>
             <p id="loc-status" style="color:var(--processing); font-size:0.85em; margin:5px 0;"></p>
             <p id="loc-desc" style="color:#aaa; font-size:0.9em;"></p>
-            <button id="enter-btn" class="action-btn" onclick="App.enterSplatMode()">进入 3D</button>
+            <button id="enter-btn" class="action-btn" onclick="App.enterSplatMode()">进入场景</button>
         </div>
 
         <div id="modal-overlay" class="pointer-auto">
             <div class="modal-box">
-                <h3 style="margin-top:0">配置 3DGS 处理任务</h3>
+                <h3 style="margin-top:0">配置 GPU 处理任务</h3>
                 <div class="input-group"><label>HF Write Token</label><input type="password" id="hf-token" placeholder="hf_..."></div>
                 <div class="input-group">
-                    <label>地理位置 (点击拾取按钮后在地图上选择)</label>
+                    <label>地理位置</label>
                     <div style="display:flex; gap:8px;">
-                        <input type="text" id="lat-lon-display" readonly placeholder="请点击右侧按钮选择位置..." style="flex:1; background:#111;">
+                        <input type="text" id="lat-lon-display" readonly placeholder="点击右侧按钮在地图点选" style="flex:1; background:#111;">
                         <button onclick="App.startPickerMode()" style="background:#0072ff; color:white; border:none; border-radius:8px; padding:0 15px; cursor:pointer; font-weight:bold;">📍 拾取位置</button>
                     </div>
                 </div>
-                <div class="input-group"><label>原始图片 (作为重建输入)</label><input type="file" id="photo" accept="image/*"></div>
-                <div class="input-group"><label>地点故事</label><textarea id="desc" rows="3"></textarea></div>
-                <button class="btn-submit" onclick="App.handleUpload()">提交任务</button>
-                <button onclick="UI.closeUpload()" style="width:100%; background:none; color:#888; border:none; margin-top:10px; cursor:pointer;">取消</button>
-            </div>
-        </div>
-    </div>
-
-    <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import * as GEOTHREE from 'geo-three';
-        import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
-        import { commit } from '@huggingface/hub';
-
-        const REPO_ID = "ColinWong24/my-gaussian-world"; 
-        const state = { locations: [], currentLoc: null, viewer: null, isPicking: false, selectedCoords: null };
-
-        const App = {
-            init: async function() {
-                this.scene = new THREE.Scene();
-                this.camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1e10);
-                this.camera.position.set(0, 500, 1000);
-                
-                this.renderer = new THREE.WebGLRenderer({ antialias: true });
-                this.renderer.setSize(window.innerWidth, window.innerHeight);
-                document.getElementById('canvas-container').appendChild(this.renderer.domElement);
-                
-                this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-                this.controls.screenSpacePanning = false;
-
-                // 1. 初始化动态地图 (geo-three)
-                const provider = new GEOTHREE.OpenStreetMapsProvider();
-                this.map = new GEOTHREE.MapView(GEOTHREE.MapView.PLANAR, provider, provider);
-                this.scene.add(this.map);
-                
-                // 将地图中心对准香港
-                const hk = GEOTHREE.UnitsUtils.datumsToSpherical(22.3193, 114.1694);
-                this.map.position.set(-hk.x, 0, hk.y);
-
-                this.markerGroup = new THREE.Group();
-                this.scene.add(this.markerGroup);
-
-                window.addEventListener('click', (e) => this.onClick(e));
-                await this.loadLocations();
-                this.animate();
-            },
-
-            loadLocations: async function() {
-                try {
-                    const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
-                    if(!res.ok) return;
-                    state.locations = await res.json();
-                    this.markerGroup.clear();
-                    state.locations.forEach(loc => {
-                        const coords = GEOTHREE.UnitsUtils.datumsToSpherical(loc.lat, loc.lon);
-                        const isReady = loc.status !== "processing";
-                        const mesh = new THREE.Mesh(
-                            new THREE.SphereGeometry(20, 32, 32), 
-                            new THREE.MeshBasicMaterial({ color: isReady ? 0x00ff88 : 0xffcc00 })
-                        );
-                        // 注意 geo-three 的坐标系与 datumsToSpherical 的匹配
-                        mesh.position.set(coords.x + this.map.position.x, 20, -coords.y - this.map.position.z);
-                        mesh.userData = loc;
-                        this.markerGroup.add(mesh);
-                    });
-                } catch(e) {}
-            },
-
-            startPickerMode: function() { 
-                state.isPicking = true; 
-                document.getElementById('modal-overlay').style.display = 'none'; 
-                document.getElementById('picker-toast').style.display = 'block'; 
-            },
-
-            onClick: function(e) {
-                if(e.target.closest('.pointer-auto')) return;
-                const ray = new THREE.Raycaster();
-                const m = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
-                ray.setFromCamera(m, this.camera);
-
-                if(state.isPicking) {
-                    // 获取地图点击点的地理坐标
-                    const hits = ray.intersectObjects(this.map.children, true);
-                    if(hits.length > 0) {
-                        const p = hits[0].point;
-                        // 逆向计算经纬度
-                        const worldX = p.x - this.map.position.x;
-                        const worldY = -p.z + this.map.position.z;
-                        const geo = GEOTHREE.UnitsUtils.sphericalToDatums(worldX, worldY);
-                        
-                        state.selectedCoords = geo;
-                        document.getElementById('lat-lon-display').value = `${geo.latitude.toFixed(5)}, ${geo.longitude.toFixed(5)}`;
-                        state.isPicking = false; 
-                        document.getElementById('picker-toast').style.display = 'none'; 
-                        document.getElementById('modal-overlay').style.display = 'flex';
-                    }
-                } else {
-                    const hits = ray.intersectObjects(this.markerGroup.children);
-                    if(hits.length > 0) {
-                        state.currentLoc = hits[0].object.userData;
-                        const bar = document.getElementById('info-bar');
-                        bar.style.display = 'block';
-                        document.getElementById('loc-desc').innerText = state.currentLoc.desc;
-                        document.getElementById('loc-status').innerText = state.currentLoc.status === 'processing' ? '⌛ 正在后台处理中...' : '✅ 点击进入 3D 视图';
-                        document.getElementById('enter-btn').disabled = state.currentLoc.status === 'processing';
-                    } else {
-                        document.getElementById('info-bar').style.display = 'none';
-                    }
-                }
-            },
-
-            handleUpload: async function() {
-                const token = document.getElementById('hf-token').value;
-                const file = document.getElementById('photo').files[0];
-                if(!token || !file || !state.selectedCoords) return alert("请完成所有必填项及位置选择！");
-                
-                const ts = Date.now();
-                const path = `inputs/${ts}_${file.name}`;
-                state.locations.push({ 
-                    id: ts, 
-                    lat: state.selectedCoords.latitude, 
-                    lon: state.selectedCoords.longitude, 
-                    desc: document.getElementById('desc').value, 
-                    photoPath: path, splatPath: "", status: "processing" 
-                });
-                
-                try {
-                    await commit({
-                        credentials: { accessToken: token },
-                        repo: { type: "dataset", name: REPO_ID },
-                        operations: [
-                            { operation: "addOrUpdate", path: path, content: file },
-                            { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(state.locations, null, 2)], {type:"application/json"}) }
-                        ],
-                        title: `新增处理任务: ${ts}`
-                    });
-                    location.reload();
-                } catch(e) { alert("上传失败: " + e.message); }
-            },
-
-            enterSplatMode: function() {
-                if(!state.currentLoc || state.currentLoc.status === 'processing') return;
-                document.getElementById('splat-viewer').style.display = 'block';
-                const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
-                if(!state.viewer) {
-                    state.viewer = new GaussianSplats3D.Viewer({ 'cameraUp': [0, -1, -0.6], 'initialCameraPosition': [-1, -4, 6], 'rootElement': document.getElementById('splat-viewer') });
-                    state.viewer.init();
-                }
-                state.viewer.addSplatScene(url, {'streamView': true}).then(() => state.viewer.start());
-            },
-
-            animate: function() { 
-                requestAnimationFrame(() => this.animate()); 
-                this.controls.update();
-                this.renderer.render(this.scene, this.camera); 
-            }
-        };
-
-        document.getElementById('close-splat').onclick = () => document.getElementById('splat-viewer').style.display = 'none';
-        App.init();
-        window.UI = { openUpload: () => document.getElementById('modal-overlay').style.display = 'flex', closeUpload: () => document.getElementById('modal-overlay').style.display = 'none' };
-        window.App = App;
-    </script>
-</body>
-</html>
+                <div class="input-group"><label>输入图片 (.jpg/.png)</label><input type="file" id="photo" accept="image
