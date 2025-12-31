@@ -13,7 +13,9 @@ REPO_ID = "ColinWong24/my-gaussian-world"
 REPO_TYPE = "dataset"
 LOCAL_DIR = "./local_cache"
 POLL_INTERVAL = 5  # 秒
-
+# 注意：请通过环境变量设置 HF_TOKEN，不要在此文件中硬编码
+# PowerShell: $env:HF_TOKEN='your_token'
+# CMD: set HF_TOKEN=your_token
 # 确保缓存目录存在
 os.makedirs(LOCAL_DIR, exist_ok=True)
 os.makedirs(os.path.join(LOCAL_DIR, "inputs"), exist_ok=True)
