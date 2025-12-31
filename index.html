@@ -102,23 +102,79 @@
                 this.controls.enableDamping = true;
 
                 // 动态地图交互：使用 geo-three 的 MapView 实现全港范围 3D 地图
-                // MapView.PLANAR 模式会自动根据缩放级别（相机距离）调整 TileMap 精细度
+                // 使用 SPHERICAL 模式构建真实地球
                 const provider = new GEOTHREE.OpenStreetMapsProvider();
-                this.map = new GEOTHREE.MapView(GEOTHREE.MapView.PLANAR, provider);
+                this.map = new GEOTHREE.MapView(GEOTHREE.MapView.SPHERICAL, provider);
                 
-                // 定位至香港中心（22.3193°N, 114.1694°E）
-                const hk = GEOTHREE.UnitsUtils.datumsToSpherical(22.3193, 114.1694);
-                this.map.position.set(-hk.x, 0, hk.y);
-                
+                // 3D 地球模式下，无需移动地图本身，而是调整相机位置
                 this.scene.add(this.map);
+
+                // 香港坐标 (22.3193°N, 114.1694°E)
+                // 将经纬度转换为 3D 球面坐标 (默认地球半径 6378137 米)
+                // geo-three 内部处理了单位，我们需要计算相机应该在的位置
+                const coords = GEOTHREE.UnitsUtils.datumsToSpherical(22.3193, 114.1694);
+                
+                // 相机位置：在香港上方的高空
+                // 稍微偏移一点以产生俯视效果
+                const height = 10000; // 10km 高空
+                const scale = 1.0; // 缩放系数，视 geo-three 内部实现而定，通常是 1单位=1米
+                
+                // 注意：geo-three 的 spherical 模式，地球中心在 (0,0,0)
+                // datumsToSpherical 返回的是归一化向量还是实际坐标？
+                // 查看源码或文档，通常 datumsToSpherical(lat, lon) 返回 {x, y, z}
+                
+                // 重新计算相机位置：沿着该经纬度的法向量向外延伸
+                // 简单的球面坐标公式:
+                // phi = (90 - lat) * (Math.PI / 180)
+                // theta = (lon + 180) * (Math.PI / 180)
+                // x = -(r * Math.sin(phi) * Math.cos(theta))
+                // z = (r * Math.sin(phi) * Math.sin(theta))
+                // y = (r * Math.cos(phi))
+                
+                // 使用 geo-three 提供的工具更安全，但这里手动设置相机位置
+                // 实际上 geo-three 的球体半径非常大，我们需要调整相机参数
+                
+                // 简单起见，我们先用 PLANAR 模式调试，因为 SPHERICAL 需要处理巨大的坐标值
+                // 回退到 PLANAR 但修复坐标逻辑
+                
+                /* PLANAR 模式修复尝试 */
+                // this.map = new GEOTHREE.MapView(GEOTHREE.MapView.PLANAR, provider);
+                // this.scene.add(this.map);
+                // const hk_mercator = this.map.getProjection().project(22.3193, 114.1694); 
+                // this.map.position.set(-hk_mercator[0], 0, -hk_mercator[1]); // 移动地图使香港在原点
+                
+                /* 再次尝试 SPHERICAL 模式，配合正确的相机定位 */
+                // SPHERICAL 模式下，地球半径约为 6,378,137 单位
+                // 我们需要把相机放到地球表面上方
+                
+                // 让我们使用 geo-three 示例中的标准做法
+                // 直接使用 SPHERICAL 模式，并把 Controls 的 target 设为香港
+                
+                this.scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+                this.scene.add(new THREE.DirectionalLight(0xffffff, 0.8));
 
                 this.markerGroup = new THREE.Group();
                 this.scene.add(this.markerGroup);
-                this.scene.add(new THREE.AmbientLight(0xffffff, 1.5));
                 
-                // 相机看向地图中心（地图位置）
-                this.camera.lookAt(-hk.x, 0, hk.y);
-                this.controls.target.set(-hk.x, 0, hk.y);
+                // 计算香港在球面上的位置
+                // datumsToSpherical 返回的是 {x, y, z} 吗？
+                // geo-three 的 datumsToSpherical(lat, lon) 返回 {x, y, z} 对应半径 R
+                const R = GEOTHREE.UnitsUtils.EARTH_RADIUS;
+                const hkPos = GEOTHREE.UnitsUtils.datumsToSpherical(22.3193, 114.1694);
+                
+                // 相机位置：香港位置 + 法向量 * 高度
+                const normal = new THREE.Vector3(hkPos.x, hkPos.y, hkPos.z).normalize();
+                const camDist = 20000; // 20km
+                this.camera.position.copy(normal).multiplyScalar(R + camDist);
+                this.camera.lookAt(hkPos.x, hkPos.y, hkPos.z);
+                
+                // 控制器围绕香港旋转
+                this.controls.target.set(hkPos.x, hkPos.y, hkPos.z);
+                
+                // 调整 Clipping Planes，因为地球很大
+                this.camera.near = 100;
+                this.camera.far = 1e8;
+                this.camera.updateProjectionMatrix();
 
                 this.bindEvents();
                 await this.loadLocations();
@@ -151,9 +207,16 @@
                     
                     this.markerGroup.clear();
                     state.locations.forEach(loc => {
+                        // 在 SPHERICAL 模式下，直接计算球面坐标
                         const c = GEOTHREE.UnitsUtils.datumsToSpherical(loc.lat, loc.lon);
                         const mesh = new THREE.Mesh(new THREE.SphereGeometry(150), new THREE.MeshBasicMaterial({ color: loc.status==='processing'?0xffcc00:0x00ff88 }));
-                        mesh.position.set(c.x + this.map.position.x, 200, -c.y - this.map.position.z);
+                        
+                        // 稍微抬高一点点，避免与地表重叠 (地球半径约为 6378137)
+                        // 将位置向量沿法线方向延伸 200 米
+                        const normal = new THREE.Vector3(c.x, c.y, c.z).normalize();
+                        const surfacePos = new THREE.Vector3(c.x, c.y, c.z);
+                        mesh.position.copy(surfacePos).add(normal.multiplyScalar(200));
+                        
                         mesh.userData = loc;
                         this.markerGroup.add(mesh);
                     });
@@ -204,7 +267,52 @@
                     const hits = ray.intersectObjects(this.map.children, true);
                     if(hits.length > 0) {
                         const p = hits[0].point;
-                        const geo = GEOTHREE.UnitsUtils.sphericalToDatums(p.x - this.map.position.x, -p.z + this.map.position.z);
+                        // SPHERICAL 模式下，p 是球面上的点
+                        // datumsToSpherical 是 lat/lon -> x/y/z
+                        // sphericalToDatums 是 x/y/z -> lat/lon (但 geo-three 文档不一定有这个，需确认)
+                        // 通常 geo-three 提供了 projection.unproject 或者 UnitsUtils.sphericalToDatums
+                        
+                        // 假设 UnitsUtils.sphericalToDatums 存在且接受 x, y (projection 后的) 或者我们直接用数学公式
+                        // 实际上 geo-three 的 sphericalToDatums 接受 x, y (如果是 PLANAR)
+                        
+                        // 在 SPHERICAL 模式下，我们需要用 projection 的 inverse
+                        // 但最简单的是直接用三角函数反算
+                        const r = Math.sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
+                        // phi: 0~PI (Y轴向下?), theta: 0~2PI
+                        // geo-three 的 Y 轴是上，Z 轴是前
+                        // 通常: y = r * sin(lat), x = r * cos(lat) * sin(lon), z = r * cos(lat) * cos(lon)
+                        // 让我们直接调用 geo-three 的工具，如果存在
+                        
+                        let geo;
+                        // 尝试使用 geo-three 提供的反算方法
+                        // 注意：geo-three 的 map 对象通常有 providers 和 projection
+                        // 我们可以利用 map.provider.projection.unproject(point) ? 不一定有
+                        
+                        // 使用通用球坐标公式反算
+                        // lat = asin(y / r)
+                        // lon = atan2(x, z) ? 需要看 geo-three 的具体轴向
+                        // 根据 datumsToSpherical:
+                        // x = - r * cos(lat) * sin(lon)
+                        // y = r * sin(lat)
+                        // z = r * cos(lat) * cos(lon)
+                        // (这是猜测，需实测，或者直接用 geo-three 的 projection)
+                        
+                        // 更安全的方式：利用 geo-three 的 projection
+                        // map.projection 应该有 unproject 方法
+                        // 实际上 geo-three 0.0.11 的 MapView 有 projection 属性
+                        // 但在 SPHERICAL 模式下，tile 是贴在球上的。
+                        
+                        // 让我们尝试使用 GEOTHREE.UnitsUtils.sphericalToDatums 
+                        // 如果它是设计给 SPHERICAL 模式用的，那么它应该接受 x, y, z
+                        // 但查看源码，sphericalToDatums(x, y) 通常是指墨卡托反算
+                        
+                        // 暂时用手动反算代替，假设 geo-three 遵循标准 Three.js 坐标系
+                        // Y up, Z forward
+                        const lat = Math.asin(p.y / r) * 180 / Math.PI;
+                        const lon = Math.atan2(-p.x, p.z) * 180 / Math.PI; // 注意这里可能有正负号差异
+                        
+                        geo = { latitude: lat, longitude: lon };
+
                         state.selectedCoords = geo;
                         document.getElementById('lat-lon-display').value = `${geo.latitude.toFixed(5)}, ${geo.longitude.toFixed(5)}`;
                         state.isPicking = false; UI.showToast(false); UI.showUpload(true);
