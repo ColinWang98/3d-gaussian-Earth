@@ -3,46 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HK 3DGS Tracker | 香港步踪</title>
+    <title>HK 3DGS Explorer | Leaflet 版</title>
+    <!-- 引入 Leaflet 样式与脚本 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --primary: #00ff88; --processing: #ffcc00; --glass: rgba(10, 15, 30, 0.95); }
-        body { margin: 0; overflow: hidden; background: #050510; font-family: 'Segoe UI', system-ui, sans-serif; color: white; }
-        #canvas-container { position: absolute; inset: 0; z-index: 1; }
-        #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+        
+        /* 地图占满全屏 */
+        #map { position: absolute; inset: 0; z-index: 1; background: #050510; }
+        
+        #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; }
         .pointer-auto { pointer-events: auto; }
         
-        /* UI 按钮样式 */
-        #upload-btn { position: absolute; top: 20px; right: 20px; background: linear-gradient(135deg, #00c6ff, #0072ff); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(0,114,255,0.4); }
-        #picker-toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(255, 200, 0, 0.95); color: black; font-weight: bold; padding: 10px 25px; border-radius: 30px; display: none; z-index: 100; }
+        /* UI 按钮 */
+        #upload-btn { position: absolute; top: 20px; right: 20px; background: linear-gradient(135deg, #00c6ff, #0072ff); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; }
+        #picker-toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(255, 200, 0, 0.95); color: black; font-weight: bold; padding: 10px 25px; border-radius: 30px; display: none; }
         
-        /* 弹窗样式 */
-        #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 100; justify-content: center; align-items: center; }
-        .modal-box { background: #151525; padding: 25px; border-radius: 16px; width: 90%; max-width: 400px; border: 1px solid #333; pointer-events: auto; }
+        /* 弹窗 */
+        #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); justify-content: center; align-items: center; }
+        .modal-box { background: #151525; padding: 25px; border-radius: 16px; width: 90%; max-width: 400px; color: white; }
         .input-group { margin-bottom: 15px; }
-        input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 10px; border-radius: 8px; }
-        .btn-submit { width: 100%; background: var(--primary); color: black; border:none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 10px; border-radius: 8px; margin-top: 5px; }
         
-        #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 480px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); display: none; }
-        #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 50; display: none; }
+        /* 信息条 */
+        #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 480px; background: var(--glass); padding: 20px; border-radius: 20px; color: white; display: none; }
+        #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 2000; display: none; }
     </style>
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/",
-            "geo-three": "https://cdn.jsdelivr.net/npm/geo-three@0.0.11/build/geo-three.module.js",
-            "@mkkellogg/gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js",
-            "@huggingface/hub": "https://cdn.jsdelivr.net/npm/@huggingface/hub@0.15.1/+esm"
-        }
-    }
-    </script>
 </head>
 <body>
-    <div id="canvas-container"></div>
-    <div id="picker-toast">📍 请点击地图选择点位...</div>
-    <div id="splat-viewer" class="pointer-auto">
-        <button id="close-splat" style="position:absolute;top:20px;left:20px;z-index:60;padding:10px;cursor:pointer;">← 返回地图</button>
-    </div>
+    <div id="map"></div>
+    <div id="picker-toast">📍 请直接在地图上点击位置...</div>
+    <div id="splat-viewer" class="pointer-auto"><button id="close-splat" style="position:absolute;top:20px;left:20px;z-index:2100;padding:10px;">← 返回地图</button></div>
 
     <div id="ui-layer">
         <button id="upload-btn" class="pointer-auto">+ 新增任务</button>
@@ -55,188 +47,108 @@
 
         <div id="modal-overlay" class="pointer-auto">
             <div class="modal-box">
-                <h3 style="margin-top:0">配置 3DGS 任务</h3>
-                <div class="input-group"><label>HF Token (Write)</label><input type="password" id="hf-token" placeholder="hf_..."></div>
+                <h3>配置 3DGS 任务</h3>
+                <div class="input-group"><label>HF Token</label><input type="password" id="hf-token"></div>
                 <div class="input-group">
                     <label>地理位置</label>
                     <div style="display:flex; gap:8px;">
-                        <input type="text" id="lat-lon-display" readonly placeholder="点击拾取位置..." style="flex:1; background:#111;">
-                        <button id="picker-btn" style="background:#0072ff; color:white; border:none; border-radius:8px; padding:0 15px; cursor:pointer; font-weight:bold;">📍 拾取</button>
+                        <input type="text" id="lat-lon-display" readonly placeholder="点击右侧按钮选择...">
+                        <button id="picker-btn" style="background:#0072ff; color:white; border:none; border-radius:8px; padding:0 10px; cursor:pointer;">📍 拾取</button>
                     </div>
                 </div>
-                <div class="input-group"><label>上传原始图片</label><input type="file" id="photo" accept="image/*"></div>
+                <div class="input-group"><label>上传图片</label><input type="file" id="photo"></div>
                 <div class="input-group"><label>描述</label><textarea id="desc" rows="3"></textarea></div>
-                <button id="submit-btn" class="btn-submit">提交至云端处理</button>
+                <button id="submit-btn" style="width:100%; background:var(--primary); padding:12px; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">提交</button>
                 <button id="cancel-btn" style="width:100%; background:none; color:#888; border:none; margin-top:10px; cursor:pointer;">取消</button>
             </div>
         </div>
     </div>
 
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import * as GEOTHREE from 'geo-three';
-        import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
         import { commit } from '@huggingface/hub';
+        import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
 
-        const REPO_ID = "ColinWong24/my-gaussian-world"; 
-        const state = { locations: [], currentLoc: null, viewer: null, isPicking: false, selectedCoords: null };
+        const REPO_ID = "ColinWong24/my-gaussian-world";
+        let state = { locations: [], currentLoc: null, isPicking: false, viewer: null };
 
-        const UI = {
-            showUpload: (show) => document.getElementById('modal-overlay').style.display = show ? 'flex' : 'none',
-            showToast: (show) => document.getElementById('picker-toast').style.display = show ? 'block' : 'none'
-        };
+        // 1. 初始化 Leaflet 地图 [attached_file:1]
+        const map = L.map('map', {
+            center: [22.3193, 114.1694], // 香港中心
+            zoom: 13,
+            zoomControl: false
+        });
 
-        const App = {
-            init: async function() {
-                this.scene = new THREE.Scene();
-                this.scene.background = new THREE.Color(0x050510);
-                
-                // 修正相机参数：针对平面地图优化
-                this.camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 1, 1e7);
-                this.camera.position.set(0, 15000, 15000); 
-                
-                this.renderer = new THREE.WebGLRenderer({ antialias: true });
-                this.renderer.setSize(window.innerWidth, window.innerHeight);
-                document.getElementById('canvas-container').appendChild(this.renderer.domElement);
-                
-                this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-                this.controls.enableDamping = true;
+        // 加载 OpenStreetMap 瓦片 [attached_file:1]
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
 
-                // 核心修复：使用 PLANAR 模式。在香港这种局部尺度，平面模式更稳定且不黑屏 [web:107]
-                const provider = new GEOTHREE.OpenStreetMapsProvider();
-                this.map = new GEOTHREE.MapView(GEOTHREE.MapView.PLANAR, provider);
-                this.scene.add(this.map);
-                
-                // 对齐香港中心
-                const hk = GEOTHREE.UnitsUtils.datumsToSpherical(22.3193, 114.1694);
-                this.map.position.set(-hk.x, 0, hk.y);
+        const markerGroup = L.layerGroup().addTo(map);
 
-                this.markerGroup = new THREE.Group();
-                this.scene.add(this.markerGroup);
-                this.scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+        // 2. 坐标拾取逻辑：直接通过 map.on('click') 获取 latlng [attached_file:1]
+        map.on('click', (e) => {
+            if (state.isPicking) {
+                const { lat, lng } = e.latlng;
+                document.getElementById('lat-lon-display').value = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+                state.selectedCoords = { lat, lng };
+                state.isPicking = false;
+                document.getElementById('picker-toast').style.display = 'none';
+                document.getElementById('modal-overlay').style.display = 'flex';
+            }
+        });
 
-                this.bindEvents();
-                await this.loadLocations();
-                this.animate();
-            },
+        // 3. 数据加载与 Marker 渲染
+        async function loadLocations() {
+            try {
+                const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
+                state.locations = await res.json();
+                markerGroup.clearLayers();
+                state.locations.forEach(loc => {
+                    const isReady = loc.status !== 'processing';
+                    // 使用 Leaflet CircleMarker 代替球体 [attached_file:1]
+                    const marker = L.circleMarker([loc.lat, loc.lon], {
+                        radius: 10,
+                        fillColor: isReady ? '#00ff88' : '#ffcc00',
+                        color: "#fff",
+                        weight: 2,
+                        fillOpacity: 0.8
+                    }).addTo(markerGroup);
 
-            bindEvents: function() {
-                // 增强交互响应：确保所有按钮都有对应的 ID 监听
-                document.getElementById('upload-btn').addEventListener('click', () => UI.showUpload(true));
-                document.getElementById('cancel-btn').addEventListener('click', () => UI.showUpload(false));
-                document.getElementById('picker-btn').addEventListener('click', () => { 
-                    UI.showUpload(false); UI.showToast(true); state.isPicking = true; 
-                });
-                document.getElementById('submit-btn').addEventListener('click', () => this.handleUpload());
-                document.getElementById('enter-btn').addEventListener('click', () => this.enterSplatMode());
-                document.getElementById('close-splat').addEventListener('click', () => {
-                    document.getElementById('splat-viewer').style.display = 'none';
-                });
-                
-                window.addEventListener('click', (e) => this.onClick(e));
-                window.addEventListener('resize', () => {
-                    this.camera.aspect = window.innerWidth / window.innerHeight;
-                    this.camera.updateProjectionMatrix();
-                    this.renderer.setSize(window.innerWidth, window.innerHeight);
-                });
-            },
-
-            loadLocations: async function() {
-                try {
-                    const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
-                    state.locations = await res.json();
-                    this.markerGroup.clear();
-                    state.locations.forEach(loc => {
-                        const c = GEOTHREE.UnitsUtils.datumsToSpherical(loc.lat, loc.lon);
-                        const isReady = loc.status !== "processing";
-                        const mesh = new THREE.Mesh(
-                            new THREE.SphereGeometry(150, 32, 32), 
-                            new THREE.MeshBasicMaterial({ color: isReady ? 0x00ff88 : 0xffcc00 })
-                        );
-                        // 映射至 X-Z 平面 [web:107]
-                        mesh.position.set(c.x + this.map.position.x, 200, -c.y - this.map.position.z);
-                        mesh.userData = loc;
-                        this.markerGroup.add(mesh);
-                    });
-                } catch(e) { console.warn("无法拉取云端数据:", e); }
-            },
-
-            onClick: function(e) {
-                if(e.target.closest('.pointer-auto')) return;
-                const ray = new THREE.Raycaster();
-                const m = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
-                ray.setFromCamera(m, this.camera);
-
-                if(state.isPicking) {
-                    const hits = ray.intersectObjects(this.map.children, true);
-                    if(hits.length > 0) {
-                        const p = hits[0].point;
-                        // 逆向计算：从世界坐标回推经纬度 [web:134]
-                        const geo = GEOTHREE.UnitsUtils.sphericalToDatums(p.x - this.map.position.x, -p.z + this.map.position.z);
-                        state.selectedCoords = geo;
-                        document.getElementById('lat-lon-display').value = `${geo.latitude.toFixed(5)}, ${geo.longitude.toFixed(5)}`;
-                        state.isPicking = false; UI.showToast(false); UI.showUpload(true);
-                    }
-                } else {
-                    const hits = ray.intersectObjects(this.markerGroup.children);
-                    if(hits.length > 0) {
-                        state.currentLoc = hits[0].object.userData;
+                    marker.on('click', () => {
+                        state.currentLoc = loc;
                         document.getElementById('info-bar').style.display = 'block';
-                        document.getElementById('loc-desc').innerText = state.currentLoc.desc;
-                        document.getElementById('loc-status').innerText = state.currentLoc.status==='processing'?'⌛ 等待 GPU 重建...':'✅ 3D 模型就绪';
-                    } else { document.getElementById('info-bar').style.display='none'; }
-                }
-            },
-
-            handleUpload: async function() {
-                const token = document.getElementById('hf-token').value;
-                const file = document.getElementById('photo').files[0];
-                if(!token || !file || !state.selectedCoords) return alert("请完成所有必填项！");
-                
-                const ts = Date.now();
-                const path = `inputs/${ts}_${file.name}`;
-                state.locations.push({ 
-                    id: ts, lat: state.selectedCoords.latitude, lon: state.selectedCoords.longitude, 
-                    desc: document.getElementById('desc').value, photoPath: path, splatPath: "", status: "processing" 
-                });
-                
-                try {
-                    await commit({ 
-                        credentials: { accessToken: token }, 
-                        repo: { type: "dataset", name: REPO_ID }, 
-                        operations: [
-                            { operation: "addOrUpdate", path: path, content: file },
-                            { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(state.locations, null, 2)], {type:"application/json"}) }
-                        ], 
-                        title: `Add HK Mission ${ts}` 
+                        document.getElementById('loc-desc').innerText = loc.desc;
+                        document.getElementById('loc-status').innerText = isReady ? '✅ 模型已就绪' : '⌛ 正在重建中...';
                     });
-                    location.reload();
-                } catch(e) { alert("云端提交失败: " + e.message); }
-            },
+                });
+            } catch (e) {}
+        }
 
-            enterSplatMode: function() {
-                if(!state.currentLoc || state.currentLoc.status === 'processing') return;
+        // 4. 事件绑定
+        document.getElementById('upload-btn').onclick = () => document.getElementById('modal-overlay').style.display = 'flex';
+        document.getElementById('cancel-btn').onclick = () => document.getElementById('modal-overlay').style.display = 'none';
+        document.getElementById('picker-btn').onclick = () => {
+            document.getElementById('modal-overlay').style.display = 'none';
+            document.getElementById('picker-toast').style.display = 'block';
+            state.isPicking = true;
+        };
+        document.getElementById('enter-btn').onclick = () => {
+            if (state.currentLoc && state.currentLoc.status !== 'processing') {
                 document.getElementById('splat-viewer').style.display = 'block';
                 const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
-                if(!state.viewer) {
+                if (!state.viewer) {
                     state.viewer = new GaussianSplats3D.Viewer({ 
-                        'cameraUp': [0,-1,-0.6], 
-                        'initialCameraPosition':[-1,-4,6], 
                         'rootElement': document.getElementById('splat-viewer') 
                     });
                     state.viewer.init();
                 }
-                state.viewer.addSplatScene(url, {'streamView': true}).then(() => state.viewer.start());
-            },
-
-            animate: function() { 
-                requestAnimationFrame(() => this.animate()); 
-                this.controls.update(); 
-                this.renderer.render(this.scene, this.camera); 
+                state.viewer.addSplatScene(url, { 'streamView': true }).then(() => state.viewer.start());
             }
         };
-        App.init();
+        document.getElementById('close-splat').onclick = () => document.getElementById('splat-viewer').style.display = 'none';
+
+        loadLocations();
     </script>
 </body>
 </html>
