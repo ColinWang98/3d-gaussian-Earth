@@ -101,21 +101,28 @@
                 this.controls = new OrbitControls(this.camera, this.renderer.domElement);
                 this.controls.enableDamping = true;
 
-                // 解决黑屏：显式指定静态地图 Provider
+                // 动态地图交互：使用 geo-three 的 MapView 实现全港范围 3D 地图
+                // MapView.PLANAR 模式会自动根据缩放级别（相机距离）调整 TileMap 精细度
                 const provider = new GEOTHREE.OpenStreetMapsProvider();
                 this.map = new GEOTHREE.MapView(GEOTHREE.MapView.PLANAR, provider);
-                this.scene.add(this.map);
                 
-                // 定位至香港中心
+                // 定位至香港中心（22.3193°N, 114.1694°E）
                 const hk = GEOTHREE.UnitsUtils.datumsToSpherical(22.3193, 114.1694);
                 this.map.position.set(-hk.x, 0, hk.y);
+                
+                this.scene.add(this.map);
 
                 this.markerGroup = new THREE.Group();
                 this.scene.add(this.markerGroup);
                 this.scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+                
+                // 相机看向地图中心（地图位置）
+                this.camera.lookAt(-hk.x, 0, hk.y);
+                this.controls.target.set(-hk.x, 0, hk.y);
 
                 this.bindEvents();
                 await this.loadLocations();
+                this.startStatusPolling(); // 启动状态轮询
                 this.animate();
             },
 
@@ -138,7 +145,10 @@
             loadLocations: async function() {
                 try {
                     const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
-                    state.locations = await res.json();
+                    const newLocations = await res.json();
+                    const hadChanges = JSON.stringify(state.locations) !== JSON.stringify(newLocations);
+                    state.locations = newLocations;
+                    
                     this.markerGroup.clear();
                     state.locations.forEach(loc => {
                         const c = GEOTHREE.UnitsUtils.datumsToSpherical(loc.lat, loc.lon);
@@ -147,7 +157,40 @@
                         mesh.userData = loc;
                         this.markerGroup.add(mesh);
                     });
-                } catch(e) {}
+                    
+                    // 如果当前选中的位置状态更新了，刷新UI
+                    if(state.currentLoc) {
+                        const updated = state.locations.find(l => l.id === state.currentLoc.id);
+                        if(updated) {
+                            const statusChanged = state.currentLoc.status !== updated.status;
+                            state.currentLoc = updated;
+                            document.getElementById('loc-status').innerText = updated.status==='processing'?'⌛ 处理中...':'✅ 已就绪';
+                            const enterBtn = document.getElementById('enter-btn');
+                            if(updated.status === 'processing') {
+                                enterBtn.style.display = 'none';
+                            } else {
+                                enterBtn.style.display = 'block';
+                                // 如果状态从处理中变为就绪，显示提示
+                                if(statusChanged) {
+                                    document.getElementById('info-bar').style.display = 'block';
+                                }
+                            }
+                        }
+                    }
+                    
+                    return hadChanges;
+                } catch(e) {
+                    console.warn('加载位置数据失败:', e);
+                    return false;
+                }
+            },
+
+            // 启动状态轮询：每5秒检查一次任务状态更新
+            startStatusPolling: function() {
+                setInterval(async () => {
+                    const hadChanges = await this.loadLocations();
+                    // 如果有状态变化，可以在这里添加通知逻辑
+                }, 5000); // 每5秒轮询一次
             },
 
             onClick: function(e) {
@@ -156,6 +199,7 @@
                 const m = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
                 ray.setFromCamera(m, this.camera);
 
+                // 坐标拾取：点击地图平面自动获取经纬度，无需手动输入
                 if(state.isPicking) {
                     const hits = ray.intersectObjects(this.map.children, true);
                     if(hits.length > 0) {
@@ -170,12 +214,17 @@
                     if(hits.length > 0) {
                         state.currentLoc = hits[0].object.userData;
                         document.getElementById('info-bar').style.display = 'block';
-                        document.getElementById('loc-desc').innerText = state.currentLoc.desc;
+                        document.getElementById('loc-title').innerText = state.currentLoc.desc || '香港记忆点';
+                        document.getElementById('loc-desc').innerText = state.currentLoc.desc || '';
                         document.getElementById('loc-status').innerText = state.currentLoc.status==='processing'?'⌛ 处理中...':'✅ 已就绪';
+                        const enterBtn = document.getElementById('enter-btn');
+                        enterBtn.style.display = state.currentLoc.status==='processing'?'none':'block';
                     } else { document.getElementById('info-bar').style.display='none'; }
                 }
             },
 
+            // 任务异步处理：上传照片到 Hugging Face，标记状态为"处理中"
+            // 本地 GPU 脚本会监听并拉取新任务进行 3DGS 重建
             handleUpload: async function() {
                 const token = document.getElementById('hf-token').value;
                 const file = document.getElementById('photo').files[0];
@@ -194,6 +243,8 @@
                 } catch(e) { alert("上传失败: " + e.message); }
             },
 
+            // 高精 3D 重建展示：进入 3DGS 模型的沉浸式视图
+            // 使用 @mkkellogg/gaussian-splats-3d 库实现实时渲染
             enterSplatMode: function() {
                 if(!state.currentLoc || state.currentLoc.status === 'processing') return;
                 document.getElementById('splat-viewer').style.display = 'block';
@@ -202,7 +253,9 @@
                     state.viewer = new GaussianSplats3D.Viewer({ 'cameraUp': [0,-1,-0.6], 'initialCameraPosition':[-1,-4,6], 'rootElement': document.getElementById('splat-viewer') });
                     state.viewer.init();
                 }
-                state.viewer.addSplatScene(url, {'streamView': true}).then(() => state.viewer.start());
+                // .ply 文件不支持 streamView，仅 .splat 支持
+                const isSplat = url.toLowerCase().endsWith('.splat');
+                state.viewer.addSplatScene(url, {'streamView': isSplat}).then(() => state.viewer.start());
             },
 
             animate: function() { 
