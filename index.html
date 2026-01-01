@@ -3,47 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HK 3DGS Hub | Pro Tracker v2.5</title>
+    <title>HK 3DGS Hub | Pro Optimized</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
     <style>
         :root { --primary: #00ff88; --danger: #ff4444; --glass: rgba(10, 15, 30, 0.95); --accent: #0072ff; }
         body, html { margin: 0; padding: 0; height: 100%; background: #000; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
-        
         #map-background { position: absolute; inset: 0; z-index: 1; }
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; }
         .pointer-auto { pointer-events: auto; }
-        
-        /* 顶部控制 */
         #lang-toggle { position: absolute; top: 20px; left: 20px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; }
         #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; z-index: 1001; }
-        
-        /* 地图信息 */
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
         #status-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; margin-bottom: 8px; font-weight: bold; }
         .status-ready { background: #00ff8822; color: #00ff88; }
         .status-busy { background: #ffcc0022; color: #ffcc00; }
-
-        /* 3D 浏览器与 AI 对话 */
         #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 2000; display: none; }
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; }
-        
         #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: rgba(10, 15, 30, 0.95); backdrop-filter: blur(15px); border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
         #chat-msgs { flex: 1; padding: 12px; overflow-y: auto; font-size: 0.85em; color: #eee; display: flex; flex-direction: column; gap: 10px; }
         .msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; line-height: 1.5; word-wrap: break-word; }
-        .msg-agent { background: var(--accent); align-self: flex-start; border-bottom-left-radius: 2px; }
-        .msg-user { background: #333; align-self: flex-end; border-bottom-right-radius: 2px; }
-        
+        .msg-agent { background: var(--accent); align-self: flex-start; }
+        .msg-user { background: #333; align-self: flex-end; }
         #chat-input-wrap { display: flex; border-top: 1px solid rgba(255,255,255,0.1); padding: 10px; background: rgba(0,0,0,0.3); }
-        #chat-input { flex: 1; background: transparent; border: none; color: white; outline: none; font-size: 0.9em; padding-right: 10px; }
-
-        /* 密钥激活 UI */
+        #chat-input { flex: 1; background: transparent; border: none; color: white; outline: none; }
         #gemini-config-ui { padding: 30px; text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; }
         #chat-main-ui { display: none; flex-direction: column; height: 100%; }
-
-        /* 弹窗及拾取 */
         #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); justify-content: center; align-items: center; z-index: 3000; }
         .modal-box { background: #151525; padding: 25px; border-radius: 16px; width: 90%; max-width: 400px; color: white; border: 1px solid #333; }
-        input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 12px; border-radius: 8px; margin: 10px 0; font-family: inherit; }
+        input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 12px; border-radius: 8px; margin: 10px 0; }
         #picker-toast { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: #ffcc00; color: #000; font-weight: bold; padding: 10px 25px; border-radius: 30px; display: none; z-index: 4000; }
     </style>
     <script type="importmap">
@@ -57,21 +44,17 @@
 </head>
 <body>
     <div id="map-background"></div>
-    <div id="picker-toast">📍 <span data-i18n="picker_hint">点击地图拾取坐标...</span></div>
+    <div id="picker-toast">📍 <span data-i18n="picker_hint">点击地图拾取坐标点...</span></div>
 
-    <!-- 3D 查看器层 -->
     <div id="splat-viewer" class="pointer-auto">
         <button id="close-splat" data-i18n="btn_back">返回地图</button>
         <div id="chat-window">
-            <!-- 密钥激活界面 -->
             <div id="gemini-config-ui">
                 <p style="font-size: 0.9em; color: #00ff88; margin-bottom: 15px; font-weight: bold;">👤 激活 AI 导览员</p>
                 <input type="password" id="user-gemini-key" placeholder="粘贴 Gemini API Key...">
                 <button id="save-key-btn" style="background:var(--accent); color:white; border:none; padding:12px; border-radius:8px; cursor:pointer; font-weight:bold;">开启 AI 对话</button>
-                <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:#666; font-size:0.75em; margin-top:20px; text-decoration:none;">尚未拥有密钥？点此免费获取 (AI Studio)</a>
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:#666; font-size:0.75em; margin-top:20px; text-decoration:none;">点此获取 API Key (AI Studio)</a>
             </div>
-
-            <!-- 聊天对话界面 -->
             <div id="chat-main-ui">
                 <div id="chat-msgs"></div>
                 <div id="chat-input-wrap">
@@ -82,10 +65,9 @@
         </div>
     </div>
 
-    <!-- 基础 UI 层 -->
     <div id="ui-layer">
         <button id="lang-toggle" class="pointer-auto">EN / 中</button>
-        <button id="upload-btn" class="pointer-auto" data-i18n="btn_new">+ 新增重建任务</button>
+        <button id="upload-btn" class="pointer-auto" data-i18n="btn_new">+ 新增任务</button>
         <div id="info-bar" class="pointer-auto">
             <div id="status-tag"></div>
             <h3 id="loc-title" style="margin:0"></h3>
@@ -96,7 +78,6 @@
         </div>
     </div>
 
-    <!-- 上传任务弹窗 -->
     <div id="modal-overlay" class="pointer-auto">
         <div class="modal-box">
             <h3 data-i18n="modal_title" style="margin-top:0">配置 3DGS 任务</h3>
@@ -104,12 +85,12 @@
             <input type="text" id="loc-name-cn" placeholder="地点名称 (中文)">
             <input type="text" id="loc-name-en" placeholder="Location Name (EN)">
             <div style="display:flex; gap:8px;">
-                <input type="text" id="lat-lon-display" readonly placeholder="点击拾取选择坐标">
-                <button id="picker-btn" style="background:var(--accent); color:white; border:none; border-radius:8px; padding:0 15px; cursor:pointer; white-space:nowrap;" data-i18n="btn_pick">拾取点位</button>
+                <input type="text" id="lat-lon-display" readonly placeholder="点击拾取坐标">
+                <button id="picker-btn" style="background:var(--accent); color:white; border:none; border-radius:8px; padding:0 15px; cursor:pointer;" data-i18n="btn_pick">拾取</button>
             </div>
             <input type="file" id="photo" accept="image/*">
-            <textarea id="desc" rows="2" placeholder="讲述这个地方的故事或背景描述..."></textarea>
-            <button id="submit-btn" style="width:100%; background:var(--primary); padding:14px; border:none; border-radius:10px; font-weight:bold; cursor:pointer; color:#000; margin-top:10px;" data-i18n="btn_submit">同步至 HF 开始重建</button>
+            <textarea id="desc" rows="2" placeholder="描述该地点的背景..."></textarea>
+            <button id="submit-btn" style="width:100%; background:var(--primary); padding:14px; border:none; border-radius:10px; font-weight:bold; cursor:pointer; color:#000; margin-top:10px;" data-i18n="btn_submit">提交任务</button>
             <button id="cancel-btn" style="width:100%; background:none; color:#888; border:none; margin-top:10px; cursor:pointer;" data-i18n="btn_cancel">取消</button>
         </div>
     </div>
@@ -120,30 +101,27 @@
         import * as THREE from 'three';
         import * as GaussianSplats3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js';
 
-        // 密钥管理方案：本地浏览器存储 [web:246]
         let ACTIVE_GEMINI_KEY = localStorage.getItem('MY_GEMINI_KEY') || "";
-
         const REPO_ID = "ColinWong24/my-gaussian-world";
         const state = { locations: [], currentLoc: null, lang: 'cn', viewer: null, isPicking: false };
         const i18n = {
-            cn: { btn_new: "+ 新增任务", btn_back: "← 返回地图", btn_enter: "全息查看", btn_pick: "拾取点位", btn_submit: "同步至 HF 开始重建", btn_cancel: "取消", modal_title: "3D 重建配置", picker_hint: "请在地图上点击拾取坐标点...", chat_placeholder: "向作者提问...", status_ready: "✅ 模型已就绪", status_busy: "⌛ GPU 重建中...", welcome: "你好！我拍摄了这个场景，关于这里你有什么想问的吗？" },
-            en: { btn_new: "+ New Task", btn_back: "← Back", btn_enter: "View 3D", btn_pick: "Pick Loc", btn_submit: "Submit to HF", btn_cancel: "Cancel", modal_title: "3D GS Config", picker_hint: "Click on the map to pick...", chat_placeholder: "Ask author...", status_ready: "✅ Ready", status_busy: "⌛ Processing...", welcome: "Hi! I captured this scene. Ask me anything about this location." }
+            cn: { btn_new: "+ 新增任务", btn_back: "← 返回地图", btn_enter: "全息查看", btn_pick: "拾取", btn_submit: "提交任务", btn_cancel: "取消", modal_title: "3D 重建配置", picker_hint: "请在地图上点击拾取坐标点...", chat_placeholder: "向作者提问...", status_ready: "✅ 模型已就绪", status_busy: "⌛ GPU 重建中...", welcome: "你好！我拍摄了这个场景，想了解什么？" },
+            en: { btn_new: "+ New Task", btn_back: "← Back", btn_enter: "View 3D", btn_pick: "Pick Loc", btn_submit: "Submit", btn_cancel: "Cancel", modal_title: "3D GS Config", picker_hint: "Click map to pick...", chat_placeholder: "Ask author...", status_ready: "✅ Ready", status_busy: "⌛ Processing...", welcome: "Hi! I captured this. Any questions?" }
         };
 
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
         const markerGroup = L.layerGroup().addTo(map);
 
-        // 统一事件监听 [web:214]
         document.addEventListener('click', async (e) => {
             const id = e.target.id;
             if (id === 'lang-toggle') { state.lang = state.lang === 'cn' ? 'en' : 'cn'; updateUI(); loadLocations(); }
             if (id === 'upload-btn') document.getElementById('modal-overlay').style.display = 'flex';
             if (id === 'cancel-btn') document.getElementById('modal-overlay').style.display = 'none';
             if (id === 'picker-btn') { document.getElementById('modal-overlay').style.display = 'none'; document.getElementById('picker-toast').style.display = 'block'; state.isPicking = true; }
-            if (id === 'close-splat') { document.getElementById('splat-viewer').style.display = 'none'; if(state.viewer) state.viewer.stop(); }
             if (id === 'chat-send') handleChat();
             if (id === 'submit-btn') handleUpload();
+            if (id === 'close-splat') { document.getElementById('splat-viewer').style.display = 'none'; if(state.viewer) state.viewer.stop(); }
             if (id === 'save-key-btn') {
                 const key = document.getElementById('user-gemini-key').value.trim();
                 if(key) { ACTIVE_GEMINI_KEY = key; localStorage.setItem('MY_GEMINI_KEY', key); showChatUI(); }
@@ -153,8 +131,7 @@
         map.on('click', (e) => {
             if (state.isPicking) {
                 document.getElementById('lat-lon-display').value = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
-                state.selectedCoords = e.latlng;
-                state.isPicking = false;
+                state.selectedCoords = e.latlng; state.isPicking = false;
                 document.getElementById('picker-toast').style.display = 'none';
                 document.getElementById('modal-overlay').style.display = 'flex';
             }
@@ -164,44 +141,32 @@
             if (!ACTIVE_GEMINI_KEY) return;
             document.getElementById('gemini-config-ui').style.display = 'none';
             document.getElementById('chat-main-ui').style.display = 'flex';
-            if (document.getElementById('chat-msgs').children.length === 0) {
-                addChatMessage('agent', i18n[state.lang].welcome);
-            }
+            if (document.getElementById('chat-msgs').children.length === 0) addChatMessage('agent', i18n[state.lang].welcome);
         }
 
-        // Gemini 对话逻辑：更新至 2.5-flash 模型 [attached_file:1]
         async function handleChat() {
             const input = document.getElementById('chat-input');
             const text = input.value.trim();
             if (!text || !ACTIVE_GEMINI_KEY) return;
-            addChatMessage('user', text);
-            input.value = "";
-
-            const sys = `你扮演该 3D 扫描的作者。地点: ${state.currentLoc.name}, 描述背景: ${state.currentLoc.desc}。以第一人称简短自然地回答。语言: ${state.lang === 'cn' ? '中文' : '英文'}。`;
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${ACTIVE_GEMINI_KEY}`;
-
+            addChatMessage('user', text); input.value = "";
+            const sys = `以第一人称扮演拍摄者。地点: ${state.currentLoc.name}, 描述背景: ${state.currentLoc.desc}。简短回答。语言: ${state.lang === 'cn' ? '中文' : '英文'}。`;
             try {
-                const res = await fetch(url, {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ contents: [{ parts: [{ text: sys + "\n问：" + text }] }] })
                 });
                 const data = await res.json();
-                if (data.error) throw new Error(data.error.message);
                 addChatMessage('agent', data.candidates[0].content.parts[0].text);
-            } catch (e) {
-                addChatMessage('agent', "AI 响应出错：" + (e.message.includes("location") ? "当前地区暂不支持免费层级" : "请检查 API Key"));
-            }
+            } catch (e) { addChatMessage('agent', "AI 出错。"); }
         }
 
         function addChatMessage(role, text) {
             const msgs = document.getElementById('chat-msgs');
-            const d = document.createElement('div');
-            d.className = `msg msg-${role}`; d.innerText = text;
+            const d = document.createElement('div'); d.className = `msg msg-${role}`; d.innerText = text;
             msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
         }
 
         document.getElementById('enter-btn').onclick = async () => {
-            if (!state.currentLoc || state.currentLoc.status !== 'ready') return;
             const container = document.getElementById('splat-viewer');
             container.style.display = 'block';
             if (ACTIVE_GEMINI_KEY) showChatUI();
@@ -209,54 +174,65 @@
 
             const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
             if (!state.viewer) {
-                state.viewer = new GaussianSplats3D.Viewer({ 'rootElement': container, 'cameraUp': [0, -1, 0], 'initialCameraPosition': [0, 0, 5], 'sharedMemoryForWorkers': false });
+                state.viewer = new GaussianSplats3D.Viewer({
+                    'rootElement': container,
+                    'cameraUp': [0, -1, 0],
+                    'initialCameraPosition': [0, 0, 5],
+                    'sharedMemoryForWorkers': false,
+                    // 核心修复 1：隐藏辅助箭头和平面 [web:232]
+                    'showSceneStatePlaceholder': false 
+                });
                 await state.viewer.init();
             }
-            await state.viewer.addSplatScene(url, { 'onSceneLoad': (scene) => {
-                const box = new THREE.Box3().setFromObject(scene.object3D);
-                const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
-                const cameraZ = Math.abs(Math.max(size.x, size.y) / 2 / Math.tan(state.viewer.camera.fov * Math.PI / 360)) * 1.5;
-                state.viewer.camera.position.set(center.x, center.y, center.z + cameraZ);
-                state.viewer.camera.lookAt(center);
-                if(state.viewer.controls) state.viewer.controls.target.copy(center);
-            }});
+
+            await state.viewer.addSplatScene(url, {
+                'onSceneLoad': (scene) => {
+                    const mesh = scene.object3D;
+                    // 核心修复 2：旋转 180 度 [web:189]
+                    mesh.rotation.y = Math.PI; 
+
+                    // 核心修复 3：强制居中 [web:181]
+                    const box = new THREE.Box3().setFromObject(mesh);
+                    const center = box.getCenter(new THREE.Vector3());
+                    mesh.position.sub(center); // 将模型几何中心移动到世界原点
+
+                    const size = box.getSize(new THREE.Vector3());
+                    const cameraZ = Math.abs(Math.max(size.x, size.y) / 2 / Math.tan(state.viewer.camera.fov * Math.PI / 360)) * 1.5;
+                    state.viewer.camera.position.set(0, 0, cameraZ);
+                    state.viewer.camera.lookAt(0, 0, 0);
+                    if(state.viewer.controls) {
+                        state.viewer.controls.target.set(0, 0, 0);
+                        state.viewer.controls.update();
+                    }
+                }
+            });
             state.viewer.start();
         };
 
-        // 任务上传：修复 400 错误 (补充 title) [file:274]
         async function handleUpload() {
             const token = document.getElementById('hf-token').value.trim();
-            const fileInput = document.getElementById('photo');
-            const file = fileInput.files[0];
-            if(!token || !file || !state.selectedCoords) return alert("请完整填写表单！");
-            
+            const file = document.getElementById('photo').files[0];
+            if(!token || !file || !state.selectedCoords) return alert("信息不全！");
             const ts = Date.now();
             const safeName = file.name.replace(/[^a-z0-9.]/gi, '_');
             const photoPath = `inputs/${ts}_${safeName}`;
-            
-            const newLocations = [...state.locations, { 
+            const newLocs = [...state.locations, { 
                 id: ts, lat: state.selectedCoords.lat, lon: state.selectedCoords.lng, 
                 name: document.getElementById('loc-name-cn').value || "未命名", 
                 name_en: document.getElementById('loc-name-en').value || "Unnamed", 
                 desc: document.getElementById('desc').value, photoPath, splatPath: "", status: "processing" 
             }];
-
             try {
                 await commit({
-                    credentials: { accessToken: token },
-                    repo: { type: "dataset", name: REPO_ID },
-                    title: `Add 3D scan task: ${ts}`, // 修复 400 错误的核心 [file:274]
+                    credentials: { accessToken: token }, repo: { type: "dataset", name: REPO_ID },
+                    title: `Upload task ${ts}`,
                     operations: [
                         { operation: "addOrUpdate", path: photoPath, content: file },
-                        { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(newLocations, null, 2)], {type:"application/json"}) }
+                        { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(newLocs, null, 2)], {type:"application/json"}) }
                     ]
                 });
-                alert("同步成功！后端 GPU 节点将自动开始处理。");
                 location.reload();
-            } catch (e) {
-                alert("提交失败：请确认 Token 权限为 Write 且网络通畅。");
-            }
+            } catch (e) { alert("上传失败。"); }
         }
 
         function updateUI() {
@@ -287,7 +263,7 @@
         }
 
         loadLocations(); updateUI();
-        setInterval(loadLocations, 15000); // 15秒轮询一次状态
+        setInterval(loadLocations, 15000);
     </script>
 </body>
 </html>
