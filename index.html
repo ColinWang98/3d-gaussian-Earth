@@ -149,7 +149,7 @@
             const text = input.value.trim();
             if (!text || !ACTIVE_GEMINI_KEY) return;
             addChatMessage('user', text); input.value = "";
-            const sys = `以第一人称扮演拍摄者。地点: ${state.currentLoc.name}, 描述背景: ${state.currentLoc.desc}。简短回答。语言: ${state.lang === 'cn' ? '中文' : '英文'}。`;
+            const sys = `以第一人称扮演拍摄者。地点: ${state.currentLoc.name}, 描述背景: ${state.currentLoc.desc}。生活化口语化简短回答，不要过于专业，包含“唔”、“唉”等语气词。语言: ${state.lang === 'cn' ? '中文' : '英文'}。`;
             try {
                 const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
