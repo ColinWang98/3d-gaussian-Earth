@@ -1,0 +1,5 @@
+# 忽略本地配置文件
+config.local.js
+
+# 忽略本地缓存目录
+local_cache/
