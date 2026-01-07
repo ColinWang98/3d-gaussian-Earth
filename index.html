@@ -7,15 +7,18 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --primary: #00ff88; --glass: rgba(10, 15, 30, 0.95); --accent: #0072ff; }
-        body, html { margin: 0; padding: 0; height: 100%; background: #000; font-family: system-ui, sans-serif; overflow: hidden; }
+        body, html { margin: 0; height: 100%; background: #000; font-family: system-ui, sans-serif; overflow: hidden; }
         #map-background { position: absolute; inset: 0; z-index: 1; }
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; }
         .pointer-auto { pointer-events: auto; }
         #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; cursor: pointer; font-weight: bold; }
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
         #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 2000; display: none; }
-        #close-btn { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; }
-        #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; color: white; z-index: 2050; }
+        #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; display: flex; flex-direction: column; border: 1px solid #333; }
+        #chat-msgs { flex: 1; padding: 10px; overflow-y: auto; color: #eee; font-size: 0.9em; }
+        .msg { padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; max-width: 80%; }
+        .msg-agent { background: var(--accent); align-self: flex-start; }
+        .msg-user { background: #333; align-self: flex-end; }
     </style>
     <script type="importmap">{ "imports": { 
         "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
@@ -24,107 +27,64 @@
 </head>
 <body>
     <div id="map-background"></div>
-    
     <div id="splat-viewer" class="pointer-auto">
-        <div id="loading-overlay">解析全息模型中...</div>
-        <button id="close-btn">← 返回地图</button>
+        <button onclick="location.reload()" style="position:absolute; top:20px; left:20px; z-index:2100; padding:10px; border-radius:20px; cursor:pointer;">返回地图</button>
+        <div id="chat-window"><div id="chat-msgs"></div><input type="text" id="chat-input" placeholder="提问..."></div>
     </div>
 
     <div id="ui-layer">
-        <button id="upload-btn" class="pointer-auto" onclick="window.open('https://huggingface.co/datasets/ColinWong24/my-gaussian-world/tree/main/inputs')">+ 提交照片</button>
+        <button id="upload-btn" class="pointer-auto">+ 新增重建任务</button>
         <div id="info-bar" class="pointer-auto">
-            <h3 id="loc-title" style="margin:0 0 10px 0"></h3>
-            <p id="loc-desc" style="color:#aaa; font-size:0.9em; margin-bottom:15px;"></p>
-            <button id="enter-btn" style="background:var(--primary); width:100%; padding:12px; border-radius:10px; font-weight:bold; cursor:pointer; color:#000; border:none;">全息查看 (3DGS)</button>
+            <h3 id="loc-title"></h3><p id="loc-desc"></p>
+            <button id="enter-btn" style="background:var(--primary); width:100%; padding:10px; border-radius:10px; font-weight:bold; cursor:pointer;">进入全息影像</button>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script type="module">
+        import { commit } from '@huggingface/hub';
         import * as THREE from 'three';
         import * as GaussianSplats3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
         const state = { locations: [], current: null, viewer: null };
 
-        // 1. 地图初始化 [web:13]
+        // 初始化地图 [web:13]
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-        async function loadLocations() {
-            try {
-                const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
-                state.locations = await res.json();
-                state.locations.forEach(loc => {
-                    const isReady = loc.status === 'ready';
-                    L.circleMarker([loc.lat, loc.lon], { 
-                        radius: 8, 
-                        color: isReady ? '#00ff88' : '#ffcc00',
-                        fillOpacity: 0.8 
-                    }).addTo(map).on('click', () => {
-                        state.current = loc;
-                        document.getElementById('loc-title').innerText = loc.name;
-                        document.getElementById('loc-desc').innerText = loc.desc || "暂无描述";
-                        document.getElementById('info-bar').style.display = 'block';
-                        document.getElementById('enter-btn').disabled = !isReady;
-                        document.getElementById('enter-btn').style.opacity = isReady ? "1" : "0.5";
-                    });
+        async function loadData() {
+            const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
+            state.locations = await res.json();
+            state.locations.forEach(loc => {
+                L.circleMarker([loc.lat, loc.lon], { color: loc.status === 'ready' ? '#00ff88' : '#ffcc00' })
+                .addTo(map).on('click', () => {
+                    state.current = loc;
+                    document.getElementById('loc-title').innerText = loc.name;
+                    document.getElementById('info-bar').style.display = 'block';
                 });
-            } catch(e) { console.error("数据加载失败:", e); }
+            });
         }
 
-        // 2. 3D 渲染核心 [web:10][web:63]
         document.getElementById('enter-btn').onclick = async () => {
             const container = document.getElementById('splat-viewer');
-            const loader = document.getElementById('loading-overlay');
             container.style.display = 'block';
-            loader.style.display = 'flex';
-
-            // 彻底清理旧实例，防止 DataCloneError 和并发冲突 [web:72]
-            if (state.viewer) {
-                state.viewer.dispose();
-                state.viewer = null;
-            }
-
-            // 初始化 Viewer，禁用共享内存以避开安全隔离限制 [web:69]
-            state.viewer = new GaussianSplats3D.Viewer({
-                rootElement: container,
-                cameraUp: [0, -1, 0],
-                initialCameraPosition: [0, 0, 5],
-                sharedMemoryForWorkers: false, // 核心修复
-                showSceneStatePlaceholder: false
-            });
-
-            await state.viewer.init();
             const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.current.splatPath}`;
             
-            try {
-                await state.viewer.addSplatScene(url, {
-                    'onSceneLoad': (scene) => {
-                        loader.style.display = 'none';
-                        const mesh = scene.object3D;
-                        mesh.rotation.y = Math.PI; // Y 轴旋转 180°
-                        
-                        const box = new THREE.Box3().setFromObject(mesh);
-                        const center = new THREE.Vector3();
-                        box.getCenter(center);
-                        mesh.position.sub(center); // 强制居中对齐 [web:5]
-                    }
-                });
-                state.viewer.start();
-            } catch (err) {
-                console.error("3DGS 加载失败:", err);
-                alert("模型加载失败，请检查文件路径或网络。");
-                loader.style.display = 'none';
-            }
+            state.viewer = new GaussianSplats3D.Viewer({ rootElement: container, cameraUp: [0, -1, 0] });
+            await state.viewer.init();
+            await state.viewer.addSplatScene(url, {
+                onSceneLoad: (scene) => {
+                    const mesh = scene.object3D;
+                    mesh.rotation.y = Math.PI; // Y 轴旋转 180° [web:10]
+                    const box = new THREE.Box3().setFromObject(mesh);
+                    mesh.position.sub(box.getCenter(new THREE.Vector3())); // 强制对齐中心 [web:5]
+                }
+            });
+            state.viewer.start();
         };
 
-        document.getElementById('close-btn').onclick = () => {
-            document.getElementById('splat-viewer').style.display = 'none';
-            if (state.viewer) state.viewer.stop();
-        };
-
-        loadLocations();
+        loadData();
     </script>
 </body>
 </html>
