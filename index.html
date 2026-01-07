@@ -36,18 +36,18 @@
 <body>
     <div id="map-background"></div>
     <div id="splat-viewer" class="pointer-auto">
-        <div id="loading-overlay">🚀 正在解析全息模型...</div>
+        <div id="loading-overlay">🚀 正在建立全息连接...</div>
         <button id="close-splat">← 返回地图</button>
         <div id="chat-window">
             <div id="gemini-config-ui" style="padding:20px; text-align:center;">
-                <p style="color:var(--primary); font-size:0.9em; font-weight:bold;">👤 激活 AI 导览员</p>
+                <p style="color:var(--primary); font-size:0.9em; font-weight:bold;">👤 AI 导览员</p>
                 <input type="password" id="user-gemini-key" placeholder="Gemini API Key...">
-                <button id="save-key-btn" style="background:var(--accent); color:white; border:none; padding:12px; width:100%; border-radius:8px; cursor:pointer; font-weight:bold;">开启对话</button>
+                <button id="save-key-btn" style="background:var(--accent); color:white; border:none; padding:12px; width:100%; border-radius:8px; cursor:pointer; font-weight:bold;">开启 AI</button>
             </div>
             <div id="chat-main-ui" style="display:none; flex-direction:column; height:100%;">
                 <div id="chat-msgs"></div>
                 <div id="chat-input-wrap">
-                    <input type="text" id="chat-input" placeholder="向作者提问...">
+                    <input type="text" id="chat-input" placeholder="提问...">
                     <button id="chat-send" style="background:none; border:none; color:var(--primary); cursor:pointer; font-weight:bold;">发送</button>
                 </div>
             </div>
@@ -69,16 +69,16 @@
 
     <div id="modal-overlay">
         <div class="modal-box">
-            <h3 style="margin:0 0 15px 0">创建重建任务</h3>
-            <input type="password" id="hf-token" placeholder="Hugging Face Write Token">
+            <h3 style="margin:0 0 15px 0">3DGS 任务配置</h3>
+            <input type="password" id="hf-token" placeholder="HF Write Token">
             <input type="text" id="loc-name" placeholder="地点名称">
             <div style="display:flex; gap:8px;">
                 <input type="text" id="lat-lon" readonly placeholder="点击地图拾取坐标">
                 <button id="pick-btn" style="background:var(--accent); border:none; padding:0 15px; border-radius:8px; color:white; cursor:pointer;">拾取</button>
             </div>
             <input type="file" id="photo-input" accept="image/*">
-            <textarea id="desc-input" rows="2" placeholder="请输入地点描述..."></textarea>
-            <button id="submit-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; margin-top:10px;">上传并同步</button>
+            <textarea id="desc-input" rows="2" placeholder="地点描述..."></textarea>
+            <button id="submit-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; margin-top:10px;">提交任务</button>
             <button onclick="document.getElementById('modal-overlay').style.display='none'" style="width:100%; background:none; border:none; color:#888; margin-top:10px; cursor:pointer;">取消</button>
         </div>
     </div>
@@ -114,10 +114,10 @@
                         document.getElementById('enter-btn').style.opacity = ready ? "1" : "0.5";
                     });
                 });
-            } catch(e) { console.error("数据加载失败", e); }
+            } catch(e) { console.error(e); }
         }
 
-        // 2. 3D 渲染核心 [web:63][web:69][web:72][web:94]
+        // 2. 3D 渲染核心修复：使用 Blob 预加载绕过 URL 格式校验 [web:63][web:69][web:72][web:94]
         document.getElementById('enter-btn').onclick = async () => {
             const container = document.getElementById('splat-viewer');
             const loader = document.getElementById('loading-overlay');
@@ -129,42 +129,47 @@
             state.viewer = new GaussianSplats3D.Viewer({
                 rootElement: container,
                 cameraUp: [0, -1, 0],
-                sharedMemoryForWorkers: false, // 禁用共享内存避开安全策略 [web:69]
-                webWorkerCount: 0,             // 强制单线程解析防止 postMessage 错误 [web:63]
+                sharedMemoryForWorkers: false, // 禁用共享内存适配 GitHub Pages [web:69]
+                webWorkerCount: 0,             // 禁用 Worker 防止 postMessage 错误 [web:63]
                 showSceneStatePlaceholder: false
             });
 
             await state.viewer.init();
-            // 拼接 URL 并带时间戳防缓存
-            const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
-            
+
             try {
-                await state.viewer.addSplatScene(url, {
-                    // 核心修正：显式指定 PLY 格式，防止因 URL 参数导致无法识别 [web:94]
-                    'format': 'ply', 
+                // 关键点：手动 fetch 模型文件，避免引擎对带参数 URL 的错误校验 [web:94][web:72]
+                const downloadUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
+                const response = await fetch(downloadUrl);
+                if (!response.ok) throw new Error("下载失败");
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                
+                await state.viewer.addSplatScene(blobUrl, {
+                    'format': 'ply', // 显式指定格式
                     'onSceneLoad': (scene) => {
-                        loader.style.display = 'none'; // 加载成功隐藏
+                        loader.style.display = 'none';
                         const mesh = scene.object3D;
                         mesh.rotation.y = Math.PI;
                         const box = new THREE.Box3().setFromObject(mesh);
-                        mesh.position.sub(box.getCenter(new THREE.Vector3())); // 居中 [web:5]
+                        mesh.position.sub(box.getCenter(new THREE.Vector3()));
+                        URL.revokeObjectURL(blobUrl); // 释放内存
                     }
                 });
                 state.viewer.start();
                 
-                // 保险：5秒后强制隐藏加载层，防止回调未触发
+                // 保险：5秒后强制隐藏加载层
                 setTimeout(() => { if(loader.style.display !== 'none') loader.style.display = 'none'; }, 5000);
             } catch (err) { 
-                console.error("3D 加载失败:", err); 
+                console.error("渲染失败:", err); 
                 loader.style.display = 'none'; 
-                alert("模型加载失败，请检查格式或路径。");
+                alert("加载失败，请确认 PLY 文件格式正确且仓库已公开。");
             }
         };
 
-        // 3. 删除功能 [web:31][web:79]
+        // 3. 物理删除功能 [web:31][web:79]
         document.getElementById('del-btn').onclick = async () => {
-            const token = prompt("请输入 HF Write Token：");
-            if (!token || !confirm("确定要永久删除吗？")) return;
+            const token = prompt("请输入 HF Token：");
+            if (!token || !confirm("确定删除？")) return;
             const operations = [
                 { operation: "delete", path: state.currentLoc.photoPath },
                 { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(state.locations.filter(l => l.id !== state.currentLoc.id), null, 2)], {type:"application/json"}) }
