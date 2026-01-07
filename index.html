@@ -188,7 +188,7 @@
             await state.viewer.addSplatScene(url, {
                 'onSceneLoad': (scene) => {
                     const mesh = scene.object3D;
-                    // 核心修复 2：旋转 180 度 [web:189]
+                    // 核心修复 2：旋转 180 度 (沿竖轴 Y) [web:189]
                     mesh.rotation.y = Math.PI; 
 
                     // 核心修复 3：强制居中 [web:181]
