@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HK 3DGS Hub | Pro Auto-Translate</title>
+    <title>HK 3DGS Hub | Pro Holographic Map</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
     <style>
         :root { --primary: #00ff88; --danger: #ff4444; --glass: rgba(10, 15, 30, 0.95); --accent: #0072ff; }
-        body, html { margin: 0; padding: 0; height: 100%; background: #000; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+        body, html { margin: 0; padding: 0; height: 100%; background: #000; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         #map-background { position: absolute; inset: 0; z-index: 1; }
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; }
         .pointer-auto { pointer-events: auto; }
@@ -16,20 +16,17 @@
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
         #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 2000; display: none; }
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; }
-        #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: rgba(10, 15, 30, 0.95); backdrop-filter: blur(15px); border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
+        #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: flex; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
         #chat-msgs { flex: 1; padding: 12px; overflow-y: auto; font-size: 0.85em; color: #eee; display: flex; flex-direction: column; gap: 10px; }
-        .msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; line-height: 1.5; word-wrap: break-word; }
+        .msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; }
         .msg-agent { background: var(--accent); align-self: flex-start; }
         .msg-user { background: #333; align-self: flex-end; }
-        #chat-input-wrap { display: flex; border-top: 1px solid rgba(255,255,255,0.1); padding: 10px; background: rgba(0,0,0,0.3); }
+        #chat-input-wrap { display: flex; border-top: 1px solid #333; padding: 10px; background: rgba(0,0,0,0.3); }
         #chat-input { flex: 1; background: transparent; border: none; color: white; outline: none; }
-        #gemini-config-ui { padding: 30px; text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; }
-        #chat-main-ui { display: none; flex-direction: column; height: 100%; }
-        #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); justify-content: center; align-items: center; z-index: 3000; }
+        #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 3000; pointer-events: auto; }
         .modal-box { background: #151525; padding: 25px; border-radius: 16px; width: 90%; max-width: 400px; color: white; border: 1px solid #333; }
         input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 12px; border-radius: 8px; margin: 10px 0; }
-        #picker-toast { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: #ffcc00; color: #000; font-weight: bold; padding: 10px 25px; border-radius: 30px; display: none; z-index: 4000; }
-        #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; color: white; z-index: 2050; }
+        #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; color: white; z-index: 2050; }
     </style>
     <script type="importmap">{ "imports": { 
         "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
@@ -38,18 +35,16 @@
 </head>
 <body>
     <div id="map-background"></div>
-    <div id="picker-toast">📍 <span data-i18n="picker_hint">点击地图拾取坐标点...</span></div>
-
     <div id="splat-viewer" class="pointer-auto">
-        <div id="loading-overlay">🚀 正在解析全息数据...</div>
-        <button id="close-splat" data-i18n="btn_back">返回地图</button>
+        <div id="loading-overlay">🚀 解析全息模型中，请稍候...</div>
+        <button id="close-splat">← 返回地图</button>
         <div id="chat-window">
-            <div id="gemini-config-ui">
-                <p style="font-size: 0.9em; color: #00ff88; margin-bottom: 10px; font-weight: bold;">👤 激活 AI 导览员</p>
+            <div id="gemini-config-ui" style="padding:20px; text-align:center;">
+                <p style="color:var(--primary); font-size:0.9em;">👤 激活 AI 导览员</p>
                 <input type="password" id="user-gemini-key" placeholder="Gemini API Key...">
-                <button id="save-key-btn" style="background:var(--accent); color:white; border:none; padding:12px; border-radius:8px; cursor:pointer; font-weight:bold;">开启 AI</button>
+                <button id="save-key-btn" style="background:var(--accent); color:white; border:none; padding:10px; width:100%; border-radius:8px; cursor:pointer;">开启 AI 对话</button>
             </div>
-            <div id="chat-main-ui">
+            <div id="chat-main-ui" style="display:none; flex-direction:column; height:100%;">
                 <div id="chat-msgs"></div>
                 <div id="chat-input-wrap">
                     <input type="text" id="chat-input" placeholder="提问...">
@@ -64,27 +59,27 @@
         <button id="upload-btn" class="pointer-auto">+ 新增任务</button>
         <div id="info-bar" class="pointer-auto">
             <h3 id="loc-title" style="margin:0"></h3>
-            <p id="loc-desc" style="color:#aaa; font-size:0.9em; margin:10px 0;"></p>
+            <p id="loc-desc" style="color:#aaa; font-size:0.85em; margin:10px 0;"></p>
             <div style="display:flex; justify-content:space-between; gap:10px;">
-                <button id="del-btn" style="background:var(--danger); border:none; padding:10px 20px; border-radius:25px; font-weight:bold; cursor:pointer; color:white; display:none;">删除</button>
-                <button id="enter-btn" style="background:var(--primary); border:none; padding:10px 30px; border-radius:25px; font-weight:bold; cursor:pointer; color:#000;">全息查看</button>
+                <button id="del-btn" style="background:var(--danger); border:none; padding:8px 15px; border-radius:10px; color:white; cursor:pointer; font-weight:bold;">删除</button>
+                <button id="enter-btn" style="background:var(--primary); border:none; padding:10px 25px; border-radius:20px; cursor:pointer; font-weight:bold; color:#000;">全息查看</button>
             </div>
         </div>
     </div>
 
-    <div id="modal-overlay" class="pointer-auto">
+    <div id="modal-overlay">
         <div class="modal-box">
-            <h3>配置 3DGS 任务</h3>
-            <input type="password" id="hf-token" placeholder="HF Write Token">
-            <input type="text" id="loc-name-cn" placeholder="地点名称">
+            <h3 style="margin:0 0 15px 0">创建重建任务</h3>
+            <input type="password" id="hf-token" placeholder="Hugging Face Write Token">
+            <input type="text" id="loc-name" placeholder="地点名称">
             <div style="display:flex; gap:8px;">
-                <input type="text" id="lat-lon-display" readonly placeholder="拾取坐标">
-                <button id="picker-btn" style="background:var(--accent); color:white; border:none; border-radius:8px; padding:0 15px; cursor:pointer;">拾取</button>
+                <input type="text" id="lat-lon" readonly placeholder="点击地图拾取坐标">
+                <button id="pick-btn" style="background:var(--accent); border:none; padding:0 15px; border-radius:8px; color:white; cursor:pointer;">拾取</button>
             </div>
-            <input type="file" id="photo" accept="image/*">
-            <textarea id="desc" rows="2" placeholder="描述..."></textarea>
-            <button id="submit-btn" style="width:100%; background:var(--primary); padding:14px; border:none; border-radius:10px; font-weight:bold; cursor:pointer; color:#000;">提交</button>
-            <button id="cancel-btn" style="width:100%; background:none; color:#888; border:none; margin-top:10px; cursor:pointer;">取消</button>
+            <input type="file" id="photo-input" accept="image/*">
+            <textarea id="desc-input" rows="2" placeholder="请输入描述..."></textarea>
+            <button id="submit-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; margin-top:10px;">上传任务</button>
+            <button onclick="document.getElementById('modal-overlay').style.display='none'" style="width:100%; background:none; border:none; color:#888; margin-top:10px; cursor:pointer;">取消</button>
         </div>
     </div>
 
@@ -95,13 +90,12 @@
         import * as GaussianSplats3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-        const state = { locations: [], currentLoc: null, lang: 'cn', viewer: null, isPicking: false };
+        const state = { locations: [], currentLoc: null, lang: 'cn', viewer: null, isPicking: false, selectedCoords: null };
 
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
         const markerGroup = L.layerGroup().addTo(map);
 
-        // 初始化加载
         async function loadLocations() {
             try {
                 const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
@@ -109,19 +103,20 @@
                 markerGroup.clearLayers();
                 state.locations.forEach(loc => {
                     const ready = loc.status === 'ready';
-                    L.circleMarker([loc.lat, loc.lon], { radius: 10, fillColor: ready ? '#00ff88' : '#ffcc00', fillOpacity: 0.9, weight: 2, color: '#fff' })
+                    L.circleMarker([loc.lat, loc.lon], { radius: 10, fillColor: ready ? '#00ff88' : '#ffcc00', fillOpacity: 0.8, color: '#fff', weight: 2 })
                     .addTo(markerGroup).on('click', () => {
                         state.currentLoc = loc;
                         document.getElementById('loc-title').innerText = loc.name;
                         document.getElementById('loc-desc').innerText = loc.desc || "处理中...";
                         document.getElementById('info-bar').style.display = 'block';
-                        document.getElementById('del-btn').style.display = 'block';
+                        document.getElementById('enter-btn').disabled = !ready;
+                        document.getElementById('enter-btn').style.opacity = ready ? "1" : "0.5";
                     });
                 });
-            } catch(e){ console.error(e); }
+            } catch(e) { console.error("加载失败", e); }
         }
 
-        // 核心渲染逻辑：修正了 GitHub Pages 报错
+        // 核心渲染逻辑
         document.getElementById('enter-btn').onclick = async () => {
             const container = document.getElementById('splat-viewer');
             const loader = document.getElementById('loading-overlay');
@@ -133,54 +128,56 @@
             state.viewer = new GaussianSplats3D.Viewer({
                 rootElement: container,
                 cameraUp: [0, -1, 0],
-                sharedMemoryForWorkers: false, // 禁用共享内存避开安全策略
-                webWorkerCount: 0,             // 强制单线程解决 postMessage 错误
+                sharedMemoryForWorkers: false, // 适配 GitHub Pages 隔离限制 [web:69]
+                webWorkerCount: 0,             // 强制单线程解决 postMessage 错误 [web:63]
                 showSceneStatePlaceholder: false
             });
 
             await state.viewer.init();
+            // 添加时间戳防止 404 缓存
+            const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
             
             try {
-                // 使用 Blob 预加载彻底解决 File format not supported 报错 [web:94]
-                const rawUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
-                const response = await fetch(rawUrl);
-                const blob = await response.blob();
-                const blobUrl = URL.createObjectURL(blob);
-
-                await state.viewer.addSplatScene(blobUrl, {
-                    'format': 'ply', // 显式声明
+                await state.viewer.addSplatScene(url, {
+                    'format': 'ply', // 显式声明，解决 URL 参数导致的识别失败 [web:94]
                     'onSceneLoad': (scene) => {
                         loader.style.display = 'none';
                         const mesh = scene.object3D;
                         mesh.rotation.y = Math.PI;
                         const box = new THREE.Box3().setFromObject(mesh);
                         mesh.position.sub(box.getCenter(new THREE.Vector3()));
-                        URL.revokeObjectURL(blobUrl);
                     }
                 });
                 state.viewer.start();
-                setTimeout(() => { if(loader.style.display !== 'none') loader.style.display = 'none'; }, 5000);
-            } catch (e) { console.error(e); loader.style.display = 'none'; }
+            } catch (err) { console.error("3D 渲染失败:", err); loader.style.display = 'none'; }
         };
 
-        // 删除功能
+        // 物理删除逻辑
         document.getElementById('del-btn').onclick = async () => {
             const token = prompt("请输入 HF Write Token：");
-            if (!token || !confirm("确定删除？")) return;
+            if (!token || !confirm("确定永久删除该任务吗？")) return;
             const operations = [
                 { operation: "delete", path: state.currentLoc.photoPath },
                 { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(state.locations.filter(l => l.id !== state.currentLoc.id), null, 2)], {type:"application/json"}) }
             ];
             if (state.currentLoc.splatPath) operations.push({ operation: "delete", path: state.currentLoc.splatPath });
             try {
-                await commit({ credentials: { accessToken: token }, repo: { type: "dataset", name: REPO_ID }, title: "Delete task", operations });
+                await commit({ credentials: { accessToken: token }, repo: { type: "dataset", name: REPO_ID }, title: "Delete location", operations });
                 location.reload();
-            } catch (e) { alert("操作失败。"); }
+            } catch (e) { alert("删除失败"); }
         };
 
-        // 其他按钮交互
+        // 辅助交互逻辑
         document.getElementById('upload-btn').onclick = () => document.getElementById('modal-overlay').style.display = 'flex';
-        document.getElementById('cancel-btn').onclick = () => document.getElementById('modal-overlay').style.display = 'none';
+        document.getElementById('pick-btn').onclick = () => { document.getElementById('modal-overlay').style.display = 'none'; state.isPicking = true; };
+        map.on('click', (e) => {
+            if (state.isPicking) {
+                state.selectedCoords = e.latlng;
+                document.getElementById('lat-lon').value = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`;
+                state.isPicking = false;
+                document.getElementById('modal-overlay').style.display = 'flex';
+            }
+        });
         document.getElementById('close-splat').onclick = () => {
             document.getElementById('splat-viewer').style.display = 'none';
             if (state.viewer) { state.viewer.stop(); state.viewer.dispose(); state.viewer = null; }
@@ -191,6 +188,7 @@
         };
 
         loadLocations();
+        setInterval(loadLocations, 20000);
     </script>
 </body>
 </html>
