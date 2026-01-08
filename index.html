@@ -284,7 +284,7 @@
                 state.scene.add(points);
                 
                 // 自动调整相机位置
-                const box = new THREE.Box3().setFromObject(splat);
+                const box = new THREE.Box3().setFromObject(points);
                 const center = box.getCenter(new THREE.Vector3());
                 const size = box.getSize(new THREE.Vector3());
                 const maxDim = Math.max(size.x, size.y, size.z);
