@@ -87,6 +87,101 @@
             } catch(e) { console.warn("Syncing..."); }
         }
 
+        // PLY 文件预处理：移除额外元素，只保留 vertex 元素
+        function preprocessPlyFile(arrayBuffer) {
+            const textDecoder = new TextDecoder('utf-8', { fatal: false });
+            const headText = textDecoder.decode(arrayBuffer.slice(0, Math.min(8192, arrayBuffer.byteLength)));
+            
+            // 查找 end_header 位置
+            const endHeaderIndex = headText.indexOf('end_header');
+            if (endHeaderIndex === -1) {
+                throw new Error('无法找到 end_header 标记');
+            }
+            
+            // 解析文件头，找到 vertex 元素
+            const lines = headText.substring(0, endHeaderIndex).split('\n');
+            let vertexElementFound = false;
+            let vertexCount = 0;
+            let vertexProperties = [];
+            let dataOffset = endHeaderIndex + 'end_header'.length;
+            
+            // 跳过换行符
+            while (dataOffset < arrayBuffer.byteLength) {
+                const byte = new Uint8Array(arrayBuffer)[dataOffset];
+                if (byte === 0x0A || byte === 0x0D) {
+                    dataOffset++;
+                } else {
+                    break;
+                }
+            }
+            
+            // 解析文件头
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (line.startsWith('element vertex')) {
+                    vertexElementFound = true;
+                    const match = line.match(/element\s+vertex\s+(\d+)/i);
+                    if (match) {
+                        vertexCount = parseInt(match[1]);
+                        console.log(`📊 找到 vertex 元素: ${vertexCount.toLocaleString()} 个顶点`);
+                    }
+                } else if (vertexElementFound && line.startsWith('property')) {
+                    vertexProperties.push(line);
+                } else if (line.startsWith('element ') && !line.startsWith('element vertex')) {
+                    // 遇到其他元素，停止收集 vertex 属性
+                    break;
+                }
+            }
+            
+            if (!vertexElementFound || vertexCount === 0) {
+                throw new Error('PLY 文件中未找到 vertex 元素');
+            }
+            
+            // 计算每个 vertex 的字节大小
+            let vertexSize = 0;
+            vertexProperties.forEach(prop => {
+                if (prop.includes('float')) {
+                    vertexSize += 4;
+                } else if (prop.includes('uint') || prop.includes('int')) {
+                    vertexSize += 4;
+                } else if (prop.includes('uchar') || prop.includes('char')) {
+                    vertexSize += 1;
+                }
+            });
+            
+            console.log(`📏 每个 vertex 大小: ${vertexSize} 字节`);
+            console.log(`📏 Vertex 数据总大小: ${(vertexCount * vertexSize / 1024 / 1024).toFixed(2)} MB`);
+            
+            // 构建新的 PLY 文件头（只包含 vertex 元素）
+            let newHeader = 'ply\n';
+            newHeader += 'format binary_little_endian 1.0\n';
+            newHeader += `element vertex ${vertexCount}\n`;
+            vertexProperties.forEach(prop => {
+                newHeader += prop + '\n';
+            });
+            newHeader += 'end_header\n';
+            
+            const newHeaderBytes = new TextEncoder().encode(newHeader);
+            const vertexDataSize = vertexCount * vertexSize;
+            
+            // 提取 vertex 数据
+            const vertexData = arrayBuffer.slice(dataOffset, dataOffset + vertexDataSize);
+            
+            // 创建新的 ArrayBuffer
+            const newPlyBuffer = new ArrayBuffer(newHeaderBytes.length + vertexDataSize);
+            const newPlyView = new Uint8Array(newPlyBuffer);
+            
+            // 复制文件头
+            newPlyView.set(newHeaderBytes, 0);
+            
+            // 复制 vertex 数据
+            newPlyView.set(new Uint8Array(vertexData), newHeaderBytes.length);
+            
+            console.log(`✅ PLY 文件预处理完成: ${(newPlyBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
+            
+            return newPlyBuffer;
+        }
+
         // PLY 文件验证函数
         async function validatePlyFile(url) {
             try {
@@ -254,6 +349,17 @@
                 const arrayBuffer = await fileResponse.arrayBuffer();
                 console.log('✅ 文件下载完成，实际大小:', `${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
                 
+                // 预处理 PLY 文件：移除额外元素，只保留 vertex
+                if (statusEl) statusEl.innerText = '🔧 正在预处理 PLY 文件...';
+                let processedBuffer;
+                try {
+                    processedBuffer = preprocessPlyFile(arrayBuffer);
+                    console.log('✅ PLY 文件预处理成功');
+                } catch (preprocessErr) {
+                    console.warn('⚠️ PLY 预处理失败，使用原始文件:', preprocessErr);
+                    processedBuffer = arrayBuffer; // 如果预处理失败，使用原始文件
+                }
+                
                 // 清理旧视图
                 if (state.viewer) {
                     try {
@@ -278,8 +384,8 @@
                 
                 if (statusEl) statusEl.innerText = '🎨 正在加载 PLY 模型...';
                 
-                // 使用 Blob URL 加载（从 ArrayBuffer 创建）
-                const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+                // 使用 Blob URL 加载（使用预处理后的 ArrayBuffer）
+                const blob = new Blob([processedBuffer], { type: 'application/octet-stream' });
                 const blobUrl = URL.createObjectURL(blob);
                 
                 console.log('📦 使用 Blob URL 加载:', blobUrl);
