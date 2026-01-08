@@ -16,7 +16,8 @@
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
         #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 2000; display: none; }
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; }
-        #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: flex; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
+        /* 为了确保 3D 画布可交互，聊天窗口不拦截鼠标事件 */
+        #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: flex; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; pointer-events: none; }
         #chat-msgs { flex: 1; padding: 12px; overflow-y: auto; font-size: 0.85em; color: #eee; display: flex; flex-direction: column; gap: 10px; }
         .msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; }
         .msg-agent { background: var(--accent); align-self: flex-start; }
@@ -26,7 +27,7 @@
         #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 3000; pointer-events: auto; }
         .modal-box { background: #151525; padding: 25px; border-radius: 16px; width: 90%; max-width: 400px; color: white; border: 1px solid #333; }
         input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 12px; border-radius: 8px; margin: 10px 0; }
-        #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; color: white; z-index: 2050; }
+        #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; color: white; z-index: 2050; pointer-events: none; }
     </style>
     <script type="importmap">{ "imports": { 
         "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
