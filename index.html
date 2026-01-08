@@ -34,7 +34,7 @@
     <div id="splat-viewer" class="pointer-auto">
         <div id="loading-overlay">
             <div class="spinner"></div>
-            <div>🚀 正在强制加载 PLY 3DGS 模型...</div>
+            <div id="loading-status">🚀 正在强制加载 PLY 3DGS 模型...</div>
             <small style="opacity: 0.6; margin-top: 10px;">通过枚举强制指定解析路径</small>
         </div>
         <button id="close-splat">← 返回地图</button>
@@ -150,10 +150,11 @@
             
             try {
                 // 先验证文件
-                loader.querySelector('div:last-child').innerHTML = '🔍 正在验证 PLY 文件格式...';
+                const statusEl = document.getElementById('loading-status');
+                if (statusEl) statusEl.innerText = '🔍 正在验证 PLY 文件格式...';
                 await validatePlyFile(rawUrl);
                 
-                loader.querySelector('div:last-child').innerHTML = '🚀 正在加载 PLY 3DGS 模型...';
+                if (statusEl) statusEl.innerText = '🚀 正在加载 PLY 3DGS 模型...';
                 
                 // 关键点 1：format: 1 强制将 URL 识别为 PLY 格式，跳过后缀名和头部猜测 [web:1]
                 // 关键点 2：progressiveLoad: false 避免流式加载中的数据冲突
@@ -189,7 +190,8 @@
                 // 方案 B：如果 addSplatScene 依然失败，尝试直接调用底层 PlyLoader 静态方法 [web:9]
                 try {
                     console.log("尝试备选路径: Static PlyLoader...");
-                    loader.querySelector('div:last-child').innerHTML = '🔄 尝试备选加载方式...';
+                    const statusEl = document.getElementById('loading-status');
+                    if (statusEl) statusEl.innerText = '🔄 尝试备选加载方式...';
                     const splatBuffer = await GaussianSplats3D.PlyLoader.loadFromURL(rawUrl);
                     await state.viewer.addSplatBuffers([splatBuffer], [{}]);
                     loader.style.display = 'none';
