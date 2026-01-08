@@ -14,10 +14,10 @@
         #lang-toggle { position: absolute; top: 20px; left: 20px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; }
         #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; z-index: 1001; }
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
-        #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 2000; display: none; }
+        #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 9999; display: none; }
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; }
         /* 为了确保 3D 画布可交互，聊天窗口不拦截鼠标事件 */
-        #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: flex; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; pointer-events: none; }
+        #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: none; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
         #chat-msgs { flex: 1; padding: 12px; overflow-y: auto; font-size: 0.85em; color: #eee; display: flex; flex-direction: column; gap: 10px; }
         .msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; }
         .msg-agent { background: var(--accent); align-self: flex-start; }
@@ -129,6 +129,9 @@
             // 打开 3D 视图时隐藏地图和上层 UI，避免挡住模型交互
             document.getElementById('ui-layer').style.display = 'none';
             document.getElementById('map-background').style.display = 'none';
+            // 暂时隐藏聊天窗口，避免任何遮挡
+            const chatWin = document.getElementById('chat-window');
+            if (chatWin) chatWin.style.display = 'none';
 
             if (state.viewer) { state.viewer.dispose(); state.viewer = null; }
 
