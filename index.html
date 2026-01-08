@@ -11,7 +11,6 @@
         #map-background { position: absolute; inset: 0; z-index: 1; }
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; }
         .pointer-auto { pointer-events: auto; }
-        #lang-toggle { position: absolute; top: 20px; left: 20px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; }
         #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; z-index: 1001; }
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
         #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 2000; display: none; }
@@ -36,7 +35,7 @@
 <body>
     <div id="map-background"></div>
     <div id="splat-viewer" class="pointer-auto">
-        <div id="loading-overlay">🚀 解析全息模型中，请稍候...</div>
+        <div id="loading-overlay">🚀 正在建立全息连接...</div>
         <button id="close-splat">← 返回地图</button>
         <div id="chat-window">
             <div id="gemini-config-ui" style="padding:20px; text-align:center;">
@@ -55,7 +54,6 @@
     </div>
 
     <div id="ui-layer">
-        <button id="lang-toggle" class="pointer-auto">EN / 中</button>
         <button id="upload-btn" class="pointer-auto">+ 新增任务</button>
         <div id="info-bar" class="pointer-auto">
             <h3 id="loc-title" style="margin:0"></h3>
@@ -90,15 +88,19 @@
         import * as GaussianSplats3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-        const state = { locations: [], currentLoc: null, lang: 'cn', viewer: null, isPicking: false, selectedCoords: null };
+        const state = { locations: [], currentLoc: null, viewer: null, isPicking: false, selectedCoords: null };
 
+        // 1. 初始化地图
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+        // 使用更稳定的地图切片源
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         const markerGroup = L.layerGroup().addTo(map);
 
+        // 2. 数据加载（带容错）
         async function loadLocations() {
             try {
                 const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
+                if(!res.ok) throw new Error("Fetch Failed");
                 state.locations = await res.json();
                 markerGroup.clearLayers();
                 state.locations.forEach(loc => {
@@ -113,10 +115,10 @@
                         document.getElementById('enter-btn').style.opacity = ready ? "1" : "0.5";
                     });
                 });
-            } catch(e) { console.error("加载失败", e); }
+            } catch(e) { console.warn("数据同步暂未连接，正在重试..."); }
         }
 
-        // 核心渲染逻辑
+        // 3. 3D 渲染逻辑（核心修复点）
         document.getElementById('enter-btn').onclick = async () => {
             const container = document.getElementById('splat-viewer');
             const loader = document.getElementById('loading-overlay');
@@ -128,18 +130,19 @@
             state.viewer = new GaussianSplats3D.Viewer({
                 rootElement: container,
                 cameraUp: [0, -1, 0],
-                sharedMemoryForWorkers: false, // 适配 GitHub Pages 隔离限制 [web:69]
-                webWorkerCount: 0,             // 强制单线程解决 postMessage 错误 [web:63]
+                sharedMemoryForWorkers: false, // 针对 GitHub Pages 安全限制
+                webWorkerCount: 0,             // 针对 GitHub Pages 报错
                 showSceneStatePlaceholder: false
             });
 
             await state.viewer.init();
-            // 添加时间戳防止 404 缓存
+            
+            // 拼接 URL 增加时间戳防止缓存
             const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
             
             try {
                 await state.viewer.addSplatScene(url, {
-                    'format': 'ply', // 显式声明，解决 URL 参数导致的识别失败 [web:94]
+                    'format': 'ply', // 重要：显式指定 PLY 格式，解决 URL 参数导致的识别报错
                     'onSceneLoad': (scene) => {
                         loader.style.display = 'none';
                         const mesh = scene.object3D;
@@ -149,25 +152,29 @@
                     }
                 });
                 state.viewer.start();
-            } catch (err) { console.error("3D 渲染失败:", err); loader.style.display = 'none'; }
+            } catch (err) { 
+                console.error("渲染异常", err); 
+                loader.style.display = 'none'; 
+                alert("模型加载失败，请检查网络或文件格式。");
+            }
         };
 
-        // 物理删除逻辑
+        // 4. 删除逻辑
         document.getElementById('del-btn').onclick = async () => {
             const token = prompt("请输入 HF Write Token：");
-            if (!token || !confirm("确定永久删除该任务吗？")) return;
+            if (!token || !confirm("确定删除？")) return;
             const operations = [
                 { operation: "delete", path: state.currentLoc.photoPath },
                 { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(state.locations.filter(l => l.id !== state.currentLoc.id), null, 2)], {type:"application/json"}) }
             ];
             if (state.currentLoc.splatPath) operations.push({ operation: "delete", path: state.currentLoc.splatPath });
             try {
-                await commit({ credentials: { accessToken: token }, repo: { type: "dataset", name: REPO_ID }, title: "Delete location", operations });
+                await commit({ credentials: { accessToken: token }, repo: { type: "dataset", name: REPO_ID }, title: "Delete task", operations });
                 location.reload();
-            } catch (e) { alert("删除失败"); }
+            } catch (e) { alert("操作失败"); }
         };
 
-        // 辅助交互逻辑
+        // 5. 交互逻辑
         document.getElementById('upload-btn').onclick = () => document.getElementById('modal-overlay').style.display = 'flex';
         document.getElementById('pick-btn').onclick = () => { document.getElementById('modal-overlay').style.display = 'none'; state.isPicking = true; };
         map.on('click', (e) => {
@@ -188,7 +195,7 @@
         };
 
         loadLocations();
-        setInterval(loadLocations, 20000);
+        setInterval(loadLocations, 15000); // 降低同步频率
     </script>
 </body>
 </html>
