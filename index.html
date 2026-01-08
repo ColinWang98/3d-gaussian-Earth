@@ -242,12 +242,24 @@
                 
                 // 初始化 Three.js 场景
                 state.scene = new THREE.Scene();
+                state.scene.background = new THREE.Color(0x000000); // 黑色背景
+                
+                // 添加环境光
+                const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+                state.scene.add(ambientLight);
+                
+                // 添加方向光
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(1, 1, 1);
+                state.scene.add(directionalLight);
+                
                 state.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
                 state.camera.position.set(0, 0, 5);
                 
-                state.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                state.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
                 state.renderer.setSize(container.clientWidth, container.clientHeight);
                 state.renderer.setPixelRatio(window.devicePixelRatio);
+                state.renderer.setClearColor(0x000000, 1); // 黑色背景
                 container.appendChild(state.renderer.domElement);
                 
                 state.controls = new OrbitControls(state.camera, state.renderer.domElement);
@@ -273,33 +285,88 @@
                 });
                 URL.revokeObjectURL(blobUrl);
                 
+                // 调试信息
+                console.log('📊 几何体信息:');
+                console.log('  - 顶点数量:', geometry.attributes.position?.count || 0);
+                console.log('  - 是否有颜色:', geometry.attributes.color ? '是' : '否');
+                console.log('  - 是否有法线:', geometry.attributes.normal ? '是' : '否');
+                
+                // 如果没有颜色属性，添加默认颜色
+                if (!geometry.attributes.color) {
+                    const colors = [];
+                    const count = geometry.attributes.position.count;
+                    for (let i = 0; i < count; i++) {
+                        colors.push(1, 1, 1); // 白色
+                    }
+                    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+                    console.log('  - 已添加默认白色');
+                }
+                
+                // 计算边界框
+                geometry.computeBoundingBox();
+                const bbox = geometry.boundingBox;
+                console.log('  - 边界框:', bbox);
+                
                 // 创建材质和网格
                 const material = new THREE.PointsMaterial({
-                    size: 0.01,
-                    vertexColors: true,
+                    size: 0.05, // 增大点的大小
+                    vertexColors: geometry.attributes.color ? true : false,
                     transparent: true,
-                    opacity: 0.8
+                    opacity: 0.9,
+                    sizeAttenuation: true
                 });
                 const points = new THREE.Points(geometry, material);
                 state.scene.add(points);
                 
+                console.log('✅ 点云已添加到场景');
+                
                 // 自动调整相机位置
                 const box = new THREE.Box3().setFromObject(points);
-                const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                const fov = state.camera.fov * (Math.PI / 180);
-                let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-                cameraZ *= 1.5; // 稍微远一点
-                state.camera.position.set(center.x, center.y, center.z + cameraZ);
-                state.controls.target.copy(center);
-                state.controls.update();
+                if (box.isEmpty()) {
+                    // 如果边界框为空，使用几何体的边界框
+                    if (bbox && !bbox.isEmpty()) {
+                        box.copy(bbox);
+                    } else {
+                        console.warn('⚠️ 无法计算边界框，使用默认相机位置');
+                        state.camera.position.set(0, 0, 10);
+                        state.controls.target.set(0, 0, 0);
+                        state.controls.update();
+                    }
+                }
+                
+                if (!box.isEmpty()) {
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    console.log('📐 场景尺寸:', size);
+                    console.log('📍 场景中心:', center);
+                    console.log('📏 最大尺寸:', maxDim);
+                    
+                    const fov = state.camera.fov * (Math.PI / 180);
+                    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+                    cameraZ *= 2; // 稍微远一点以便看到全貌
+                    state.camera.position.set(center.x, center.y, center.z + cameraZ);
+                    state.controls.target.copy(center);
+                    state.controls.update();
+                    console.log('📷 相机位置:', state.camera.position);
+                }
+                
+                // 处理窗口大小变化
+                function handleResize() {
+                    if (!state.camera || !state.renderer) return;
+                    state.camera.aspect = container.clientWidth / container.clientHeight;
+                    state.camera.updateProjectionMatrix();
+                    state.renderer.setSize(container.clientWidth, container.clientHeight);
+                }
+                window.addEventListener('resize', handleResize);
                 
                 // 渲染循环
                 function animate() {
                     requestAnimationFrame(animate);
-                    state.controls.update();
-                    state.renderer.render(state.scene, state.camera);
+                    if (state.controls) state.controls.update();
+                    if (state.renderer && state.scene && state.camera) {
+                        state.renderer.render(state.scene, state.camera);
+                    }
                 }
                 animate();
                 
