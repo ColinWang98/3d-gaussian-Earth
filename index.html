@@ -125,6 +125,10 @@
             container.style.display = 'block';
             loader.style.display = 'flex';
 
+            // 打开 3D 视图时隐藏地图和上层 UI，避免挡住模型交互
+            document.getElementById('ui-layer').style.display = 'none';
+            document.getElementById('map-background').style.display = 'none';
+
             if (state.viewer) { state.viewer.dispose(); state.viewer = null; }
 
             state.viewer = new GaussianSplats3D.Viewer({
@@ -183,6 +187,9 @@
 
         document.getElementById('close-splat').onclick = () => {
             document.getElementById('splat-viewer').style.display = 'none';
+            // 关闭 3D 视图时恢复地图和 UI
+            document.getElementById('ui-layer').style.display = 'block';
+            document.getElementById('map-background').style.display = 'block';
             if (state.viewer) { state.viewer.stop(); state.viewer.dispose(); state.viewer = null; }
         };
 
