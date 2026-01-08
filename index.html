@@ -219,6 +219,23 @@
             console.log('🔗 完整 URL:', rawUrl);
             console.log('📚 使用库: @mkkellogg/gaussian-splats-3d');
             
+            // 添加全局错误捕获
+            const originalErrorHandler = window.onerror;
+            let arrayLengthErrorCaught = false;
+            window.onerror = (msg, url, line, col, error) => {
+                if (msg && msg.includes('Invalid typed array length')) {
+                    console.error('⚠️ 捕获到数组长度错误:', msg);
+                    arrayLengthErrorCaught = true;
+                    const statusEl = document.getElementById('loading-status');
+                    if (statusEl) statusEl.innerText = '❌ 文件解析错误，PLY 格式可能不兼容';
+                    return true; // 阻止默认错误处理
+                }
+                if (originalErrorHandler) {
+                    return originalErrorHandler(msg, url, line, col, error);
+                }
+                return false;
+            };
+            
             try {
                 const statusEl = document.getElementById('loading-status');
                 if (statusEl) statusEl.innerText = '🔍 正在验证 PLY 文件格式...';
@@ -307,8 +324,29 @@
                 
             } catch (err) {
                 console.error("加载失败:", err);
+                window.onerror = originalErrorHandler; // 恢复错误处理
                 loader.style.display = 'none';
-                alert(`模型加载失败：\n\n错误: ${err.message || err}\n\n请检查文件是否正确上传到 HuggingFace 数据集。`);
+                
+                // 检查是否是数组长度错误
+                const isArrayLengthError = arrayLengthErrorCaught || 
+                    (err.message && err.message.includes('Invalid typed array length')) ||
+                    (err.toString && err.toString().includes('Invalid typed array length'));
+                
+                if (isArrayLengthError) {
+                    const errorMsg = `PLY 文件解析失败：数组长度错误\n\n` +
+                        `可能原因：\n` +
+                        `1. PLY 文件包含额外的元素（extrinsic, intrinsic, image_size 等），导致库解析混乱\n` +
+                        `2. 文件头中的数值解析错误（字节序问题）\n` +
+                        `3. 文件格式不完全兼容当前的 Gaussian Splatting 库\n\n` +
+                        `建议：\n` +
+                        `- 检查 PLY 文件是否只包含 vertex 元素\n` +
+                        `- 尝试使用其他工具重新生成 PLY 文件\n` +
+                        `- 或者使用支持更多 PLY 元素格式的查看器\n\n` +
+                        `文件路径: ${state.currentLoc.splatPath}`;
+                    alert(errorMsg);
+                } else {
+                    alert(`模型加载失败：\n\n错误: ${err.message || err}\n\n请检查文件是否正确上传到 HuggingFace 数据集。`);
+                }
             }
         };
 
