@@ -34,8 +34,8 @@
     <div id="splat-viewer" class="pointer-auto">
         <div id="loading-overlay">
             <div class="spinner"></div>
-            <div>🚀 正在强制注入 PLY 二进制流...</div>
-            <small style="opacity: 0.6; margin-top: 10px;">绕过系统后缀校验中</small>
+            <div>🚀 正在强制加载 PLY 3DGS 模型...</div>
+            <small style="opacity: 0.6; margin-top: 10px;">通过枚举强制指定解析路径</small>
         </div>
         <button id="close-splat">← 返回地图</button>
     </div>
@@ -48,7 +48,7 @@
         <div id="info-bar" class="pointer-auto">
             <h3 id="loc-title" style="margin:0"></h3>
             <p id="loc-desc" style="color:#aaa; font-size:0.85em; margin:10px 0;"></p>
-            <button id="enter-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:20px; cursor:pointer; font-weight:bold; color:#000;">查看 3D 渲染</button>
+            <button id="enter-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:20px; cursor:pointer; font-weight:bold; color:#000;">进入全息影像</button>
         </div>
     </div>
 
@@ -60,6 +60,7 @@
         const REPO_ID = "ColinWong24/my-gaussian-world";
         const state = { locations: [], currentLoc: null, viewer: null };
 
+        // 1. 地图初始化 [web:122]
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
         const markerGroup = L.layerGroup().addTo(map);
@@ -71,8 +72,10 @@
                 markerGroup.clearLayers();
                 state.locations.forEach(loc => {
                     const ready = loc.status === 'ready';
-                    L.circleMarker([loc.lat, loc.lon], { radius: 10, fillColor: ready ? '#00ff88' : '#ff4444', fillOpacity: 0.8, color: '#fff', weight: 2 })
-                    .addTo(markerGroup).on('click', () => {
+                    L.circleMarker([loc.lat, loc.lon], { 
+                        radius: 10, fillColor: ready ? '#00ff88' : '#666', 
+                        fillOpacity: 0.8, color: '#fff', weight: 2 
+                    }).addTo(markerGroup).on('click', () => {
                         state.currentLoc = loc;
                         document.getElementById('loc-title').innerText = loc.name;
                         document.getElementById('loc-desc').innerText = loc.desc || "处理中...";
@@ -84,7 +87,7 @@
             } catch(e) { console.warn("Syncing..."); }
         }
 
-        // 核心修复逻辑：显式使用 PlyLoader 绕过后缀识别和 RangeError [web:10][web:132]
+        // 2. 终极渲染方案：强制 format 声明 [web:1][web:10]
         document.getElementById('enter-btn').onclick = async () => {
             if (!state.currentLoc) return;
             const container = document.getElementById('splat-viewer');
@@ -92,13 +95,15 @@
             container.style.display = 'block';
             loader.style.display = 'flex';
 
+            // 清理旧视图
             if (state.viewer) { state.viewer.dispose(); state.viewer = null; }
 
+            // 初始化新视图
             state.viewer = new GaussianSplats3D.Viewer({
                 rootElement: container,
                 cameraUp: [0, -1, 0],
                 sharedMemoryForWorkers: false,
-                webWorkerCount: 0, 
+                webWorkerCount: 0,
                 showSceneStatePlaceholder: false
             });
 
@@ -107,26 +112,41 @@
             try {
                 const rawUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
                 
-                // 强制专用加载器，彻底切断与 KSplatLogic (导致 RangeError 的源头) 的联系
-                const plyLoader = new GaussianSplats3D.PlyLoader();
-                const splatBuffer = await plyLoader.loadFromFile(rawUrl);
-                
-                await state.viewer.addSplatBuffers([splatBuffer], [{
-                    'rotation': [1, 0, 0, 0], 'scale': [1, 1, 1], 'position': [0, 0, 0]
-                }]);
+                // 关键点 1：format: 1 强制将 URL 识别为 PLY 格式，跳过后缀名和头部猜测 [web:1]
+                // 关键点 2：progressiveLoad: false 避免流式加载中的数据冲突
+                await state.viewer.addSplatScene(rawUrl, {
+                    'format': 1, // GaussianSplats3D.SceneFormat.Ply
+                    'showLoadingUI': false,
+                    'progressiveLoad': false,
+                    'onSceneLoad': () => {
+                        loader.style.display = 'none';
+                        state.viewer.start();
+                    }
+                });
 
-                loader.style.display = 'none';
-                state.viewer.start();
+                // 自动居中
+                setTimeout(() => {
+                    const mesh = state.viewer.getSplatMesh();
+                    if (mesh) {
+                        const box = new THREE.Box3().setFromObject(mesh);
+                        mesh.position.sub(box.getCenter(new THREE.Vector3()));
+                    }
+                }, 100);
 
-                const mesh = state.viewer.getSplatMesh();
-                if (mesh) {
-                    const box = new THREE.Box3().setFromObject(mesh);
-                    mesh.position.sub(box.getCenter(new THREE.Vector3()));
-                }
             } catch (err) {
-                console.error("3D Render Error:", err);
-                loader.style.display = 'none';
-                alert("渲染失败：底层 PlyLoader 无法识别该文件格式。请检查 PLY 文件是否损坏。");
+                console.error("渲染引擎拦截:", err);
+                
+                // 方案 B：如果 addSplatScene 依然失败，尝试直接调用底层 PlyLoader 静态方法 [web:9]
+                try {
+                    console.log("尝试备选路径: Static PlyLoader...");
+                    const splatBuffer = await GaussianSplats3D.PlyLoader.loadFromURL(rawUrl);
+                    await state.viewer.addSplatBuffers([splatBuffer], [{}]);
+                    loader.style.display = 'none';
+                    state.viewer.start();
+                } catch (fail) {
+                    loader.style.display = 'none';
+                    alert("模型解析失败：文件虽然有 .ply 后缀，但其内部二进制结构不符合标准 3DGS 格式。");
+                }
             }
         };
 
