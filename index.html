@@ -342,25 +342,30 @@
                 
                 if (statusEl) statusEl.innerText = '🎨 正在加载 PLY 模型...';
                 
-                // 直接使用远程 URL 加载（按照可工作的代码风格）
+                // 调试信息
+                console.log('📂 加载 PLY 文件:', rawUrl);
+                console.log('📄 文件路径:', state.currentLoc.splatPath);
+                
+                // 直接使用远程 URL 加载，明确指定 PLY 格式
                 await state.viewer.addSplatScene(rawUrl, {
-                    'onSceneLoad': (scene) => {
+                    'format': 1, // 明确指定 PLY 格式 (GaussianSplats3D.SceneFormat.Ply)
+                'onSceneLoad': (scene) => {
                         loader.style.display = 'none';
                         state.viewer.start();
                         
                         // 自动居中（按照可工作的代码风格）
                         try {
-                            const mesh = scene.object3D;
+                    const mesh = scene.object3D;
                             if (mesh) {
-                                mesh.rotation.y = Math.PI;
-                                const box = new THREE.Box3().setFromObject(mesh);
-                                const center = box.getCenter(new THREE.Vector3());
-                                mesh.position.sub(center);
-                                const size = box.getSize(new THREE.Vector3());
-                                const cameraZ = Math.abs(Math.max(size.x, size.y) / 2 / Math.tan(state.viewer.camera.fov * Math.PI / 360)) * 1.5;
-                                state.viewer.camera.position.set(0, 0, cameraZ);
-                                state.viewer.camera.lookAt(0, 0, 0);
-                                if(state.viewer.controls) state.viewer.controls.target.set(0, 0, 0);
+                    mesh.rotation.y = Math.PI;
+                    const box = new THREE.Box3().setFromObject(mesh);
+                    const center = box.getCenter(new THREE.Vector3());
+                    mesh.position.sub(center);
+                    const size = box.getSize(new THREE.Vector3());
+                    const cameraZ = Math.abs(Math.max(size.x, size.y) / 2 / Math.tan(state.viewer.camera.fov * Math.PI / 360)) * 1.5;
+                    state.viewer.camera.position.set(0, 0, cameraZ);
+                    state.viewer.camera.lookAt(0, 0, 0);
+                    if(state.viewer.controls) state.viewer.controls.target.set(0, 0, 0);
                                 console.log('✅ 场景加载并居中完成');
                             }
                         } catch(e) {
