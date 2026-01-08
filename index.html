@@ -20,7 +20,9 @@
         #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 2000; display: none; }
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; }
         
-        #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.9); display: none; justify-content: center; align-items: center; color: white; z-index: 2050; font-weight: bold; text-align: center; }
+        #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 2050; text-align: center; }
+        .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1); border-left-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
     <script type="importmap">{ "imports": { 
         "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js"
@@ -30,7 +32,11 @@
     <div id="map-background"></div>
 
     <div id="splat-viewer" class="pointer-auto">
-        <div id="loading-overlay">🚀 正在加载 3D 模型...<br><small style="font-weight:normal; opacity:0.7">正在强制解析 .ply 格式</small></div>
+        <div id="loading-overlay">
+            <div class="spinner"></div>
+            <div>🚀 正在强制注入 PLY 二进制流...</div>
+            <small style="opacity: 0.6; margin-top: 10px;">绕过系统后缀校验中</small>
+        </div>
         <button id="close-splat">← 返回地图</button>
     </div>
 
@@ -42,9 +48,7 @@
         <div id="info-bar" class="pointer-auto">
             <h3 id="loc-title" style="margin:0"></h3>
             <p id="loc-desc" style="color:#aaa; font-size:0.85em; margin:10px 0;"></p>
-            <div style="display:flex; justify-content:space-between; gap:10px;">
-                <button id="enter-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:20px; cursor:pointer; font-weight:bold; color:#000;">进入全息影像</button>
-            </div>
+            <button id="enter-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:20px; cursor:pointer; font-weight:bold; color:#000;">查看 3D 渲染</button>
         </div>
     </div>
 
@@ -54,47 +58,35 @@
         import * as GaussianSplats3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-        const state = { locations: [], currentLoc: null, viewer: null, isDark: true };
+        const state = { locations: [], currentLoc: null, viewer: null };
 
-        // 1. 初始化地图 [web:122]
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
-        const STYLES = {
-            dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-            light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-        };
-        L.tileLayer(STYLES.dark).addTo(map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
         const markerGroup = L.layerGroup().addTo(map);
 
-        // 2. 加载地点数据
         async function loadLocations() {
             try {
                 const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
                 state.locations = await res.json();
                 markerGroup.clearLayers();
                 state.locations.forEach(loc => {
-                    const isReady = loc.status === 'ready';
-                    L.circleMarker([loc.lat, loc.lon], { 
-                        radius: 10, 
-                        fillColor: isReady ? '#00ff88' : '#666', 
-                        fillOpacity: 0.8, 
-                        color: '#fff', 
-                        weight: 2 
-                    }).addTo(markerGroup).on('click', () => {
+                    const ready = loc.status === 'ready';
+                    L.circleMarker([loc.lat, loc.lon], { radius: 10, fillColor: ready ? '#00ff88' : '#ff4444', fillOpacity: 0.8, color: '#fff', weight: 2 })
+                    .addTo(markerGroup).on('click', () => {
                         state.currentLoc = loc;
                         document.getElementById('loc-title').innerText = loc.name;
                         document.getElementById('loc-desc').innerText = loc.desc || "处理中...";
                         document.getElementById('info-bar').style.display = 'block';
-                        document.getElementById('enter-btn').style.opacity = isReady ? "1" : "0.5";
-                        document.getElementById('enter-btn').disabled = !isReady;
+                        document.getElementById('enter-btn').disabled = !ready;
+                        document.getElementById('enter-btn').style.opacity = ready ? "1" : "0.5";
                     });
                 });
-            } catch(e) { console.error("Data Load Error"); }
+            } catch(e) { console.warn("Syncing..."); }
         }
 
-        // 3. 核心修复后的渲染逻辑 [web:10][web:132]
+        // 核心修复逻辑：显式使用 PlyLoader 绕过后缀识别和 RangeError [web:10][web:132]
         document.getElementById('enter-btn').onclick = async () => {
-            if (!state.currentLoc || !state.currentLoc.splatPath) return;
-            
+            if (!state.currentLoc) return;
             const container = document.getElementById('splat-viewer');
             const loader = document.getElementById('loading-overlay');
             container.style.display = 'block';
@@ -105,36 +97,36 @@
             state.viewer = new GaussianSplats3D.Viewer({
                 rootElement: container,
                 cameraUp: [0, -1, 0],
-                sharedMemoryForWorkers: false, 
-                webWorkerCount: 0,             
+                sharedMemoryForWorkers: false,
+                webWorkerCount: 0, 
                 showSceneStatePlaceholder: false
             });
 
             await state.viewer.init();
 
             try {
-                // 构建 URL，后缀名通过 format 强制指定，不受文件名大小写影响
-                const rawUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
+                const rawUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
                 
-                // 关键：format: 1 强制引擎将流识别为 PLY 格式
-                await state.viewer.addSplatScene(rawUrl, {
-                    'format': 1, // GaussianSplats3D.SceneFormat.Ply
-                    'showSceneStatePlaceholder': false
-                });
+                // 强制专用加载器，彻底切断与 KSplatLogic (导致 RangeError 的源头) 的联系
+                const plyLoader = new GaussianSplats3D.PlyLoader();
+                const splatBuffer = await plyLoader.loadFromFile(rawUrl);
+                
+                await state.viewer.addSplatBuffers([splatBuffer], [{
+                    'rotation': [1, 0, 0, 0], 'scale': [1, 1, 1], 'position': [0, 0, 0]
+                }]);
 
                 loader.style.display = 'none';
                 state.viewer.start();
-                
-                // 自动对齐模型
+
                 const mesh = state.viewer.getSplatMesh();
                 if (mesh) {
                     const box = new THREE.Box3().setFromObject(mesh);
                     mesh.position.sub(box.getCenter(new THREE.Vector3()));
                 }
-            } catch (err) { 
-                console.error("Critical Render Error:", err); 
-                loader.style.display = 'none'; 
-                alert("模型解析异常：虽然检测到 .ply 后缀，但内容无法识别。请确认上传的是标准的 3DGS PLY 文件。");
+            } catch (err) {
+                console.error("3D Render Error:", err);
+                loader.style.display = 'none';
+                alert("渲染失败：底层 PlyLoader 无法识别该文件格式。请检查 PLY 文件是否损坏。");
             }
         };
 
