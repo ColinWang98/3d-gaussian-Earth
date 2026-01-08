@@ -87,6 +87,43 @@
             } catch(e) { console.warn("Syncing..."); }
         }
 
+        // PLY 文件验证函数
+        async function validatePlyFile(url) {
+            try {
+                const response = await fetch(url, { method: 'HEAD' });
+                if (!response.ok) {
+                    throw new Error(`文件不存在或无法访问: ${response.status}`);
+                }
+                const contentLength = response.headers.get('content-length');
+                if (contentLength && parseInt(contentLength) < 100) {
+                    throw new Error('文件太小，可能不是有效的 PLY 文件');
+                }
+                
+                // 获取文件头部进行验证
+                const headResponse = await fetch(url, { 
+                    headers: { 'Range': 'bytes=0-1023' } 
+                });
+                const headText = await headResponse.text();
+                
+                // 检查 PLY 文件头
+                if (!headText.startsWith('ply') && !headText.startsWith('PLY')) {
+                    throw new Error('文件不是有效的 PLY 格式（缺少 PLY 头部标识）');
+                }
+                
+                // 检查是否包含必要的 3DGS 字段
+                const requiredFields = ['x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2'];
+                const hasRequiredFields = requiredFields.some(field => headText.includes(field));
+                if (!hasRequiredFields) {
+                    console.warn('警告: PLY 文件可能不包含标准 3DGS 字段');
+                }
+                
+                return true;
+            } catch (err) {
+                console.error('PLY 文件验证失败:', err);
+                throw err;
+            }
+        }
+
         // 2. 终极渲染方案：强制 format 声明 [web:1][web:10]
         document.getElementById('enter-btn').onclick = async () => {
             if (!state.currentLoc) return;
@@ -109,8 +146,14 @@
 
             await state.viewer.init();
 
+            const rawUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
+            
             try {
-                const rawUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
+                // 先验证文件
+                loader.querySelector('div:last-child').innerHTML = '🔍 正在验证 PLY 文件格式...';
+                await validatePlyFile(rawUrl);
+                
+                loader.querySelector('div:last-child').innerHTML = '🚀 正在加载 PLY 3DGS 模型...';
                 
                 // 关键点 1：format: 1 强制将 URL 识别为 PLY 格式，跳过后缀名和头部猜测 [web:1]
                 // 关键点 2：progressiveLoad: false 避免流式加载中的数据冲突
@@ -136,16 +179,28 @@
             } catch (err) {
                 console.error("渲染引擎拦截:", err);
                 
+                // 检查是否是数组长度错误
+                if (err.message && err.message.includes('Invalid typed array length')) {
+                    loader.style.display = 'none';
+                    alert(`文件格式错误：PLY 文件头解析失败，可能是文件损坏或格式不正确。\n\n错误详情: ${err.message}\n\n请检查文件是否完整，或联系管理员重新生成模型。`);
+                    return;
+                }
+                
                 // 方案 B：如果 addSplatScene 依然失败，尝试直接调用底层 PlyLoader 静态方法 [web:9]
                 try {
                     console.log("尝试备选路径: Static PlyLoader...");
+                    loader.querySelector('div:last-child').innerHTML = '🔄 尝试备选加载方式...';
                     const splatBuffer = await GaussianSplats3D.PlyLoader.loadFromURL(rawUrl);
                     await state.viewer.addSplatBuffers([splatBuffer], [{}]);
                     loader.style.display = 'none';
                     state.viewer.start();
                 } catch (fail) {
+                    console.error("备选方案也失败:", fail);
                     loader.style.display = 'none';
-                    alert("模型解析失败：文件虽然有 .ply 后缀，但其内部二进制结构不符合标准 3DGS 格式。");
+                    const errorMsg = fail.message && fail.message.includes('Invalid typed array length')
+                        ? `文件格式错误：PLY 文件头解析失败。\n\n可能原因：\n1. 文件损坏或不完整\n2. 文件格式不符合标准 3DGS PLY 格式\n3. 文件头中的数值解析错误\n\n错误: ${fail.message}`
+                        : `模型解析失败：文件虽然有 .ply 后缀，但其内部二进制结构不符合标准 3DGS 格式。\n\n错误: ${fail.message || fail}`;
+                    alert(errorMsg);
                 }
             }
         };
