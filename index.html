@@ -93,6 +93,25 @@
         const REPO_ID = "ColinWong24/my-gaussian-world";
         const state = { locations: [], currentLoc: null, lang: 'cn', viewer: null, isPicking: false, selectedCoords: null };
 
+        function updateLangUI() {
+            const langBtn = document.getElementById('lang-toggle');
+            if (langBtn) langBtn.innerText = state.lang === 'cn' ? 'EN / 中' : '中 / EN';
+
+            // 根据语言切换当前地点标题和描述（如果有英文字段）
+            if (state.currentLoc) {
+                const loc = state.currentLoc;
+                const titleEl = document.getElementById('loc-title');
+                const descEl = document.getElementById('loc-desc');
+                if (state.lang === 'cn') {
+                    titleEl.innerText = loc.name || '';
+                    descEl.innerText = loc.desc || '处理中...';
+                } else {
+                    titleEl.innerText = loc.name_en || loc.name || '';
+                    descEl.innerText = loc.desc_en || loc.desc || 'Processing...';
+                }
+            }
+        }
+
         // 1. 初始化地图 [web:13]
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
@@ -109,8 +128,15 @@
                     L.circleMarker([loc.lat, loc.lon], { radius: 10, fillColor: ready ? '#00ff88' : '#ffcc00', fillOpacity: 0.8, color: '#fff', weight: 2 })
                     .addTo(markerGroup).on('click', () => {
                         state.currentLoc = loc;
-                        document.getElementById('loc-title').innerText = loc.name;
-                        document.getElementById('loc-desc').innerText = loc.desc || "处理中...";
+                        state.currentLoc = loc;
+                        // 根据当前语言渲染标题与描述
+                        if (state.lang === 'cn') {
+                            document.getElementById('loc-title').innerText = loc.name;
+                            document.getElementById('loc-desc').innerText = loc.desc || "处理中...";
+                        } else {
+                            document.getElementById('loc-title').innerText = loc.name_en || loc.name;
+                            document.getElementById('loc-desc').innerText = loc.desc_en || loc.desc || "Processing...";
+                        }
                         document.getElementById('info-bar').style.display = 'block';
                         document.getElementById('enter-btn').disabled = !ready;
                         document.getElementById('enter-btn').style.opacity = ready ? "1" : "0.5";
@@ -129,6 +155,9 @@
             // 打开 3D 视图时隐藏地图和上层 UI，避免挡住模型交互
             document.getElementById('ui-layer').style.display = 'none';
             document.getElementById('map-background').style.display = 'none';
+            // 确保任务弹窗关闭，避免灰色蒙层残留
+            const modal = document.getElementById('modal-overlay');
+            if (modal) modal.style.display = 'none';
             // 暂时隐藏聊天窗口，避免任何遮挡
             const chatWin = document.getElementById('chat-window');
             if (chatWin) chatWin.style.display = 'none';
@@ -216,8 +245,15 @@
             if (key) { localStorage.setItem('MY_GEMINI_KEY', key); document.getElementById('gemini-config-ui').style.display = 'none'; document.getElementById('chat-main-ui').style.display = 'flex'; }
         };
 
+        // 语言切换按钮
+        document.getElementById('lang-toggle').onclick = () => {
+            state.lang = state.lang === 'cn' ? 'en' : 'cn';
+            updateLangUI();
+        };
+
         loadLocations();
         setInterval(loadLocations, 20000);
+        updateLangUI();
     </script>
 </body>
 </html>
