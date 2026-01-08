@@ -101,7 +101,7 @@
                 
                 // 获取文件头部进行验证（读取更多字节以检查二进制格式）
                 const headResponse = await fetch(url, { 
-                    headers: { 'Range': 'bytes=0-2047' } 
+                    headers: { 'Range': 'bytes=0-4095' } 
                 });
                 const headArrayBuffer = await headResponse.arrayBuffer();
                 const headText = new TextDecoder('utf-8', { fatal: false }).decode(headArrayBuffer);
@@ -115,6 +115,27 @@
                 const isBinary = headText.includes('binary') || headText.includes('BINARY');
                 const isAscii = headText.includes('ascii') || headText.includes('ASCII') || !isBinary;
                 
+                // 查找文件头结束位置
+                const endHeaderIndex = headText.indexOf('end_header');
+                if (endHeaderIndex === -1) {
+                    throw new Error('PLY 文件头缺少 end_header 标记');
+                }
+                
+                // 计算二进制数据开始位置（end_header + 换行符）
+                const binaryDataStart = endHeaderIndex + 'end_header'.length;
+                // 跳过可能的换行符（\n 或 \r\n）
+                let dataOffset = binaryDataStart;
+                while (dataOffset < headArrayBuffer.byteLength && 
+                       (headText[dataOffset] === '\n' || headText[dataOffset] === '\r')) {
+                    dataOffset++;
+                }
+                
+                console.log('📋 PLY 文件头信息:');
+                console.log('  - 格式:', isBinary ? '二进制' : 'ASCII');
+                console.log('  - 文件头结束位置:', endHeaderIndex);
+                console.log('  - 二进制数据开始位置:', dataOffset);
+                console.log('  - 文件头预览:', headText.substring(0, Math.min(500, endHeaderIndex)));
+                
                 // 检查是否包含必要的 3DGS 字段
                 const requiredFields = ['x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2'];
                 const hasRequiredFields = requiredFields.some(field => headText.includes(field));
@@ -123,15 +144,42 @@
                 }
                 
                 // 检查元素数量是否合理（避免异常大的数值）
-                const elementMatch = headText.match(/element\s+\w+\s+(\d+)/i);
-                if (elementMatch) {
-                    const elementCount = parseInt(elementMatch[1]);
-                    if (elementCount > 100000000) { // 超过 1 亿个元素可能有问题
-                        throw new Error(`文件头中的元素数量异常大: ${elementCount}，可能是文件格式错误`);
+                const elementMatches = headText.match(/element\s+(\w+)\s+(\d+)/gi);
+                if (elementMatches) {
+                    console.log('  - 元素定义:', elementMatches);
+                    elementMatches.forEach(match => {
+                        const parts = match.match(/element\s+(\w+)\s+(\d+)/i);
+                        if (parts) {
+                            const elementName = parts[1];
+                            const elementCount = parseInt(parts[2]);
+                            console.log(`    * ${elementName}: ${elementCount.toLocaleString()} 个`);
+                            if (elementCount > 100000000) { // 超过 1 亿个元素可能有问题
+                                throw new Error(`文件头中的元素数量异常大: ${elementName} = ${elementCount}，可能是文件格式错误`);
+                            }
+                        }
+                    });
+                }
+                
+                // 如果是二进制格式，检查前几个数据字节
+                if (isBinary && dataOffset < headArrayBuffer.byteLength) {
+                    const dataView = new DataView(headArrayBuffer);
+                    console.log('  - 二进制数据前16字节 (十六进制):');
+                    const hexBytes = [];
+                    for (let i = dataOffset; i < Math.min(dataOffset + 16, headArrayBuffer.byteLength); i++) {
+                        hexBytes.push(dataView.getUint8(i).toString(16).padStart(2, '0'));
+                    }
+                    console.log('    ', hexBytes.join(' '));
+                    
+                    // 检查前4个字节（可能是第一个顶点的 x 坐标）
+                    if (dataOffset + 4 <= headArrayBuffer.byteLength) {
+                        const firstFloat = dataView.getFloat32(dataOffset, true); // little-endian
+                        const firstFloatBE = dataView.getFloat32(dataOffset, false); // big-endian
+                        console.log('  - 第一个浮点数 (little-endian):', firstFloat);
+                        console.log('  - 第一个浮点数 (big-endian):', firstFloatBE);
                     }
                 }
                 
-                return { isBinary, isAscii };
+                return { isBinary, isAscii, dataOffset, endHeaderIndex };
             } catch (err) {
                 console.error('PLY 文件验证失败:', err);
                 throw err;
@@ -201,6 +249,17 @@
                     
                     const arrayBuffer = await fileResponse.arrayBuffer();
                     console.log('✅ 文件下载完成，实际大小:', `${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
+                    
+                    // 再次验证文件头，这次使用完整文件
+                    const fullHeadText = new TextDecoder('utf-8', { fatal: false }).decode(
+                        arrayBuffer.slice(0, Math.min(4096, arrayBuffer.byteLength))
+                    );
+                    const endHeaderPos = fullHeadText.indexOf('end_header');
+                    if (endHeaderPos !== -1) {
+                        console.log('📋 完整文件头验证:');
+                        console.log('  - end_header 位置:', endHeaderPos);
+                        console.log('  - 文件头长度:', endHeaderPos + 'end_header'.length);
+                    }
                     
                     if (statusEl) statusEl.innerText = '🚀 正在解析 PLY 文件...';
                     
