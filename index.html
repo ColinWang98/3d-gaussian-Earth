@@ -55,11 +55,10 @@
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
     <script type="module">
         import * as THREE from 'three';
-        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/controls/OrbitControls.js';
-        import { PLYLoader } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/loaders/PLYLoader.js';
+        import * as GaussianSplats3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-        const state = { locations: [], currentLoc: null, scene: null, camera: null, renderer: null, controls: null };
+        const state = { locations: [], currentLoc: null, viewer: null };
 
         // 1. 地图初始化 [web:122]
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
@@ -218,7 +217,7 @@
             console.log('📂 数据集仓库:', REPO_ID);
             console.log('📄 PLY 文件路径:', state.currentLoc.splatPath);
             console.log('🔗 完整 URL:', rawUrl);
-            console.log('📚 使用库: antimatter15/splat');
+            console.log('📚 使用库: @mkkellogg/gaussian-splats-3d');
             
             try {
                 const statusEl = document.getElementById('loading-status');
@@ -238,137 +237,70 @@
                 const arrayBuffer = await fileResponse.arrayBuffer();
                 console.log('✅ 文件下载完成，实际大小:', `${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
                 
-                if (statusEl) statusEl.innerText = '🚀 正在初始化 3D 场景...';
+                // 清理旧视图
+                if (state.viewer) {
+                    try {
+                        state.viewer.dispose();
+                    } catch(e) {}
+                    state.viewer = null;
+                }
                 
-                // 初始化 Three.js 场景
-                state.scene = new THREE.Scene();
-                state.scene.background = new THREE.Color(0x000000); // 黑色背景
+                if (statusEl) statusEl.innerText = '🚀 正在初始化 Gaussian Splatting 查看器...';
                 
-                // 添加环境光
-                const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-                state.scene.add(ambientLight);
+                // 初始化 GaussianSplats3D Viewer
+                state.viewer = new GaussianSplats3D.Viewer({
+                    rootElement: container,
+                    cameraUp: [0, -1, 0],
+                    sharedMemoryForWorkers: false,
+                    webWorkerCount: 0,
+                    showSceneStatePlaceholder: false
+                });
                 
-                // 添加方向光
-                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-                directionalLight.position.set(1, 1, 1);
-                state.scene.add(directionalLight);
-                
-                state.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
-                state.camera.position.set(0, 0, 5);
-                
-                state.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-                state.renderer.setSize(container.clientWidth, container.clientHeight);
-                state.renderer.setPixelRatio(window.devicePixelRatio);
-                state.renderer.setClearColor(0x000000, 1); // 黑色背景
-                container.appendChild(state.renderer.domElement);
-                
-                state.controls = new OrbitControls(state.camera, state.renderer.domElement);
-                state.controls.enableDamping = true;
-                state.controls.dampingFactor = 0.05;
+                await state.viewer.init();
+                console.log('✅ Viewer 初始化完成');
                 
                 if (statusEl) statusEl.innerText = '🎨 正在加载 PLY 模型...';
                 
-                // 使用 PLYLoader 加载 PLY 文件
-                const plyLoader = new PLYLoader();
+                // 使用 Blob URL 加载（从 ArrayBuffer 创建）
                 const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
                 const blobUrl = URL.createObjectURL(blob);
                 
-                // 注意：Three.js 的 PLYLoader 可能不完全支持 Gaussian Splatting 格式
-                // 这里作为备选方案，主要用于验证文件是否可以加载
-                const geometry = await new Promise((resolve, reject) => {
-                    plyLoader.load(
-                        blobUrl,
-                        (geometry) => resolve(geometry),
-                        undefined,
-                        (error) => reject(error)
-                    );
-                });
-                URL.revokeObjectURL(blobUrl);
+                console.log('📦 使用 Blob URL 加载:', blobUrl);
                 
-                // 调试信息
-                console.log('📊 几何体信息:');
-                console.log('  - 顶点数量:', geometry.attributes.position?.count || 0);
-                console.log('  - 是否有颜色:', geometry.attributes.color ? '是' : '否');
-                console.log('  - 是否有法线:', geometry.attributes.normal ? '是' : '否');
-                
-                // 如果没有颜色属性，添加默认颜色
-                if (!geometry.attributes.color) {
-                    const colors = [];
-                    const count = geometry.attributes.position.count;
-                    for (let i = 0; i < count; i++) {
-                        colors.push(1, 1, 1); // 白色
-                    }
-                    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-                    console.log('  - 已添加默认白色');
-                }
-                
-                // 计算边界框
-                geometry.computeBoundingBox();
-                const bbox = geometry.boundingBox;
-                console.log('  - 边界框:', bbox);
-                
-                // 创建材质和网格
-                const material = new THREE.PointsMaterial({
-                    size: 0.05, // 增大点的大小
-                    vertexColors: geometry.attributes.color ? true : false,
-                    transparent: true,
-                    opacity: 0.9,
-                    sizeAttenuation: true
-                });
-                const points = new THREE.Points(geometry, material);
-                state.scene.add(points);
-                
-                console.log('✅ 点云已添加到场景');
-                
-                // 自动调整相机位置
-                const box = new THREE.Box3().setFromObject(points);
-                if (box.isEmpty()) {
-                    // 如果边界框为空，使用几何体的边界框
-                    if (bbox && !bbox.isEmpty()) {
-                        box.copy(bbox);
-                    } else {
-                        console.warn('⚠️ 无法计算边界框，使用默认相机位置');
-                        state.camera.position.set(0, 0, 10);
-                        state.controls.target.set(0, 0, 0);
-                        state.controls.update();
-                    }
-                }
-                
-                if (!box.isEmpty()) {
-                    const center = box.getCenter(new THREE.Vector3());
-                    const size = box.getSize(new THREE.Vector3());
-                    const maxDim = Math.max(size.x, size.y, size.z);
-                    console.log('📐 场景尺寸:', size);
-                    console.log('📍 场景中心:', center);
-                    console.log('📏 最大尺寸:', maxDim);
+                // 尝试使用 addSplatScene 加载
+                try {
+                    await state.viewer.addSplatScene(blobUrl, {
+                        'format': 1, // PLY 格式
+                        'showLoadingUI': false,
+                        'progressiveLoad': false,
+                        'onSceneLoad': () => {
+                            URL.revokeObjectURL(blobUrl);
+                            loader.style.display = 'none';
+                            state.viewer.start();
+                            console.log('✅ 场景加载完成');
+                        }
+                    });
                     
-                    const fov = state.camera.fov * (Math.PI / 180);
-                    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-                    cameraZ *= 2; // 稍微远一点以便看到全貌
-                    state.camera.position.set(center.x, center.y, center.z + cameraZ);
-                    state.controls.target.copy(center);
-                    state.controls.update();
-                    console.log('📷 相机位置:', state.camera.position);
+                    // 自动居中
+                    setTimeout(() => {
+                        try {
+                            const mesh = state.viewer.getSplatMesh();
+                            if (mesh) {
+                                const box = new THREE.Box3().setFromObject(mesh);
+                                const center = box.getCenter(new THREE.Vector3());
+                                mesh.position.sub(center);
+                                console.log('✅ 模型已居中');
+                            }
+                        } catch(e) {
+                            console.warn('⚠️ 自动居中失败:', e);
+                        }
+                    }, 500);
+                    
+                } catch (loadErr) {
+                    console.error('❌ addSplatScene 失败:', loadErr);
+                    URL.revokeObjectURL(blobUrl);
+                    throw loadErr;
                 }
-                
-                // 处理窗口大小变化
-                function handleResize() {
-                    if (!state.camera || !state.renderer) return;
-                    state.camera.aspect = container.clientWidth / container.clientHeight;
-                    state.camera.updateProjectionMatrix();
-                    state.renderer.setSize(container.clientWidth, container.clientHeight);
-                }
-                window.addEventListener('resize', handleResize);
-                
-                // 渲染循环
-                function animate() {
-                    requestAnimationFrame(animate);
-                    if (state.controls) state.controls.update();
-                    if (state.renderer && state.scene && state.camera) {
-                        state.renderer.render(state.scene, state.camera);
-                    }
-                }
-                animate();
                 
                 loader.style.display = 'none';
                 console.log('✅ 模型加载完成');
@@ -382,29 +314,13 @@
 
         document.getElementById('close-splat').onclick = () => {
             document.getElementById('splat-viewer').style.display = 'none';
-            // 清理场景
-            if (state.renderer) {
-                state.renderer.dispose();
-                if (state.renderer.domElement && state.renderer.domElement.parentNode) {
-                    state.renderer.domElement.parentNode.removeChild(state.renderer.domElement);
-                }
+            if (state.viewer) {
+                try {
+                    state.viewer.stop();
+                    state.viewer.dispose();
+                } catch(e) {}
+                state.viewer = null;
             }
-            if (state.scene) {
-                state.scene.traverse((obj) => {
-                    if (obj.geometry) obj.geometry.dispose();
-                    if (obj.material) {
-                        if (Array.isArray(obj.material)) {
-                            obj.material.forEach(m => m.dispose());
-                        } else {
-                            obj.material.dispose();
-                        }
-                    }
-                });
-            }
-            state.scene = null;
-            state.camera = null;
-            state.renderer = null;
-            state.controls = null;
         };
 
         loadLocations();
