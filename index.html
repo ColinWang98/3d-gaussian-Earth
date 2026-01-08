@@ -14,7 +14,7 @@
         #lang-toggle { position: absolute; top: 20px; left: 20px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; }
         #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; z-index: 1001; }
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
-        #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 9999; display: none; }
+        #splat-viewer { position: absolute; inset: 0; background: #1a1a1a; z-index: 9999; display: none; }
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; }
         /* 为了确保 3D 画布可交互，聊天窗口不拦截鼠标事件 */
         #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: none; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
@@ -154,6 +154,20 @@
                         mesh.rotation.y = Math.PI;
                         const box = new THREE.Box3().setFromObject(mesh);
                         mesh.position.sub(box.getCenter(new THREE.Vector3())); // 居中 [web:5]
+                        
+                        // 调整渲染设置，让画面更亮
+                        if (state.viewer.renderer) {
+                            // 设置更亮的背景色
+                            state.viewer.renderer.setClearColor(0x1a1a1a, 1);
+                            // 启用色调映射以提高亮度
+                            state.viewer.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                            state.viewer.renderer.toneMappingExposure = 1.2; // 增加曝光度
+                        }
+                        
+                        // 调整相机曝光（如果支持）
+                        if (state.viewer.camera && state.viewer.camera.exposure !== undefined) {
+                            state.viewer.camera.exposure = 1.2;
+                        }
                     }
                 });
                 state.viewer.start();
