@@ -99,16 +99,21 @@
                     throw new Error('文件太小，可能不是有效的 PLY 文件');
                 }
                 
-                // 获取文件头部进行验证
+                // 获取文件头部进行验证（读取更多字节以检查二进制格式）
                 const headResponse = await fetch(url, { 
-                    headers: { 'Range': 'bytes=0-1023' } 
+                    headers: { 'Range': 'bytes=0-2047' } 
                 });
-                const headText = await headResponse.text();
+                const headArrayBuffer = await headResponse.arrayBuffer();
+                const headText = new TextDecoder('utf-8', { fatal: false }).decode(headArrayBuffer);
                 
                 // 检查 PLY 文件头
                 if (!headText.startsWith('ply') && !headText.startsWith('PLY')) {
                     throw new Error('文件不是有效的 PLY 格式（缺少 PLY 头部标识）');
                 }
+                
+                // 检查文件格式（ASCII 还是二进制）
+                const isBinary = headText.includes('binary') || headText.includes('BINARY');
+                const isAscii = headText.includes('ascii') || headText.includes('ASCII') || !isBinary;
                 
                 // 检查是否包含必要的 3DGS 字段
                 const requiredFields = ['x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2'];
@@ -117,7 +122,16 @@
                     console.warn('警告: PLY 文件可能不包含标准 3DGS 字段');
                 }
                 
-                return true;
+                // 检查元素数量是否合理（避免异常大的数值）
+                const elementMatch = headText.match(/element\s+\w+\s+(\d+)/i);
+                if (elementMatch) {
+                    const elementCount = parseInt(elementMatch[1]);
+                    if (elementCount > 100000000) { // 超过 1 亿个元素可能有问题
+                        throw new Error(`文件头中的元素数量异常大: ${elementCount}，可能是文件格式错误`);
+                    }
+                }
+                
+                return { isBinary, isAscii };
             } catch (err) {
                 console.error('PLY 文件验证失败:', err);
                 throw err;
@@ -148,34 +162,78 @@
 
             const rawUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
             
+            // 调试信息：显示实际访问的 URL
+            console.log('📂 数据集仓库:', REPO_ID);
+            console.log('📄 PLY 文件路径:', state.currentLoc.splatPath);
+            console.log('🔗 完整 URL:', rawUrl);
+            
+            // 添加全局错误捕获
+            const originalErrorHandler = window.onerror;
+            window.onerror = (msg, url, line, col, error) => {
+                if (msg && msg.includes('Invalid typed array length')) {
+                    console.error('捕获到数组长度错误:', msg);
+                    const statusEl = document.getElementById('loading-status');
+                    if (statusEl) statusEl.innerText = '❌ 文件格式错误，尝试备选方案...';
+                    return true; // 阻止默认错误处理
+                }
+                if (originalErrorHandler) {
+                    return originalErrorHandler(msg, url, line, col, error);
+                }
+                return false;
+            };
+            
             try {
                 // 先验证文件
                 const statusEl = document.getElementById('loading-status');
                 if (statusEl) statusEl.innerText = '🔍 正在验证 PLY 文件格式...';
-                await validatePlyFile(rawUrl);
+                const fileInfo = await validatePlyFile(rawUrl);
                 
-                if (statusEl) statusEl.innerText = '🚀 正在加载 PLY 3DGS 模型...';
+                if (statusEl) statusEl.innerText = '📥 正在下载文件...';
                 
-                // 关键点 1：format: 1 强制将 URL 识别为 PLY 格式，跳过后缀名和头部猜测 [web:1]
-                // 关键点 2：progressiveLoad: false 避免流式加载中的数据冲突
-                await state.viewer.addSplatScene(rawUrl, {
-                    'format': 1, // GaussianSplats3D.SceneFormat.Ply
-                    'showLoadingUI': false,
-                    'progressiveLoad': false,
-                    'onSceneLoad': () => {
-                        loader.style.display = 'none';
-                        state.viewer.start();
+                // 方案 A：先下载文件，然后使用 ArrayBuffer 加载（可能更可靠）
+                try {
+                    const fileResponse = await fetch(rawUrl);
+                    if (!fileResponse.ok) {
+                        throw new Error(`下载失败: HTTP ${fileResponse.status} ${fileResponse.statusText}`);
                     }
-                });
+                    const contentLength = fileResponse.headers.get('content-length');
+                    console.log('📦 文件大小:', contentLength ? `${(parseInt(contentLength) / 1024 / 1024).toFixed(2)} MB` : '未知');
+                    
+                    const arrayBuffer = await fileResponse.arrayBuffer();
+                    console.log('✅ 文件下载完成，实际大小:', `${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
+                    
+                    if (statusEl) statusEl.innerText = '🚀 正在解析 PLY 文件...';
+                    
+                    // 使用 ArrayBuffer 创建 Blob URL
+                    const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    
+                    // 尝试使用 Blob URL 加载
+                    await state.viewer.addSplatScene(blobUrl, {
+                        'format': 1, // GaussianSplats3D.SceneFormat.Ply
+                        'showLoadingUI': false,
+                        'progressiveLoad': false,
+                        'onSceneLoad': () => {
+                            URL.revokeObjectURL(blobUrl); // 清理 Blob URL
+                            loader.style.display = 'none';
+                            state.viewer.start();
+                            window.onerror = originalErrorHandler; // 恢复错误处理
+                        }
+                    });
 
-                // 自动居中
-                setTimeout(() => {
-                    const mesh = state.viewer.getSplatMesh();
-                    if (mesh) {
-                        const box = new THREE.Box3().setFromObject(mesh);
-                        mesh.position.sub(box.getCenter(new THREE.Vector3()));
-                    }
-                }, 100);
+                    // 自动居中
+                    setTimeout(() => {
+                        const mesh = state.viewer.getSplatMesh();
+                        if (mesh) {
+                            const box = new THREE.Box3().setFromObject(mesh);
+                            mesh.position.sub(box.getCenter(new THREE.Vector3()));
+                        }
+                    }, 100);
+                    
+                } catch (bufferErr) {
+                    console.warn('使用 ArrayBuffer 加载失败，尝试直接 URL 加载:', bufferErr);
+                    throw bufferErr; // 继续到下一个方案
+                }
 
             } catch (err) {
                 console.error("渲染引擎拦截:", err);
@@ -183,7 +241,11 @@
                 // 检查是否是数组长度错误
                 if (err.message && err.message.includes('Invalid typed array length')) {
                     loader.style.display = 'none';
-                    alert(`文件格式错误：PLY 文件头解析失败，可能是文件损坏或格式不正确。\n\n错误详情: ${err.message}\n\n请检查文件是否完整，或联系管理员重新生成模型。`);
+                    window.onerror = originalErrorHandler;
+                    console.error('❌ PLY 文件解析错误:', err);
+                    console.error('📂 文件路径:', state.currentLoc.splatPath);
+                    console.error('🔗 访问 URL:', rawUrl);
+                    alert(`文件格式错误：PLY 文件头解析失败。\n\n可能原因：\n1. 文件损坏或不完整\n2. 文件格式不符合标准 3DGS PLY 格式\n3. 文件头中的数值解析错误（字节序问题）\n\n文件路径: ${state.currentLoc.splatPath}\n错误: ${err.message}\n\n请检查 HuggingFace 数据集中的文件是否正确上传。`);
                     return;
                 }
                 
@@ -196,11 +258,13 @@
                     await state.viewer.addSplatBuffers([splatBuffer], [{}]);
                     loader.style.display = 'none';
                     state.viewer.start();
+                    window.onerror = originalErrorHandler;
                 } catch (fail) {
                     console.error("备选方案也失败:", fail);
                     loader.style.display = 'none';
+                    window.onerror = originalErrorHandler;
                     const errorMsg = fail.message && fail.message.includes('Invalid typed array length')
-                        ? `文件格式错误：PLY 文件头解析失败。\n\n可能原因：\n1. 文件损坏或不完整\n2. 文件格式不符合标准 3DGS PLY 格式\n3. 文件头中的数值解析错误\n\n错误: ${fail.message}`
+                        ? `文件格式错误：PLY 文件头解析失败。\n\n可能原因：\n1. 文件损坏或不完整\n2. 文件格式不符合标准 3DGS PLY 格式\n3. 文件头中的数值解析错误（字节序问题）\n4. 文件可能是 ASCII 格式而非二进制格式\n\n错误: ${fail.message}\n\n建议：请检查 PLY 文件是否正确生成，或尝试重新生成模型。`
                         : `模型解析失败：文件虽然有 .ply 后缀，但其内部二进制结构不符合标准 3DGS 格式。\n\n错误: ${fail.message || fail}`;
                     alert(errorMsg);
                 }
