@@ -4,396 +4,140 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HK 3DGS Hub | Pro Holographic Map</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
+    <!-- 引入地图样式 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="icon" href="data:;base64,iVBORw0KGgo="> <!-- 修复 favicon 404 -->
     <style>
-        :root { --primary: #00ff88; --danger: #ff4444; --glass: rgba(10, 15, 30, 0.95); --accent: #0072ff; }
-        body, html { margin: 0; padding: 0; height: 100%; background: #000; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+        :root { --primary: #00ff88; --glass: rgba(10, 15, 30, 0.95); --accent: #0072ff; }
+        body, html { margin: 0; padding: 0; height: 100%; background: #000; font-family: system-ui, sans-serif; overflow: hidden; }
         #map-background { position: absolute; inset: 0; z-index: 1; }
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; }
         .pointer-auto { pointer-events: auto; }
-        
-        #btn-group { position: absolute; top: 20px; left: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 1001; }
-        .control-btn { background: var(--glass); color: white; border: 1px solid #444; padding: 10px 18px; border-radius: 20px; cursor: pointer; pointer-events: auto; font-size: 0.9em; }
-        
-        #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; z-index: 1001; pointer-events: auto; }
+        #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; cursor: pointer; font-weight: bold; }
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
         #splat-viewer { position: absolute; inset: 0; background: #000; z-index: 2000; display: none; }
-        #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; }
-        
-        #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 2050; text-align: center; }
-        .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1); border-left-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        #close-btn { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; }
+        #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 2050; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
     <script type="importmap">{ "imports": { 
-        "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js"
+        "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
+        "@huggingface/hub": "https://cdn.jsdelivr.net/npm/@huggingface/hub@0.15.1/+esm" 
     }}</script>
 </head>
 <body>
     <div id="map-background"></div>
-
+    
     <div id="splat-viewer" class="pointer-auto">
         <div id="loading-overlay">
             <div class="spinner"></div>
-            <div id="loading-status">🚀 正在强制加载 PLY 3DGS 模型...</div>
-            <small style="opacity: 0.6; margin-top: 10px;">通过枚举强制指定解析路径</small>
+            <div id="load-status">正在解析全息数据...</div>
         </div>
-        <button id="close-splat">← 返回地图</button>
+        <button id="close-btn">← 返回地图</button>
     </div>
 
     <div id="ui-layer">
-        <div id="btn-group">
-            <button id="style-toggle" class="control-btn">🌙 深色风格</button>
-        </div>
-        <button id="upload-btn">+ 新增任务</button>
+        <button id="upload-btn" class="pointer-auto" onclick="window.open('https://huggingface.co/datasets/ColinWong24/my-gaussian-world')">管理数据仓库</button>
         <div id="info-bar" class="pointer-auto">
-            <h3 id="loc-title" style="margin:0"></h3>
-            <p id="loc-desc" style="color:#aaa; font-size:0.85em; margin:10px 0;"></p>
-            <button id="enter-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:20px; cursor:pointer; font-weight:bold; color:#000;">进入全息影像</button>
+            <h3 id="loc-title" style="margin:0 0 5px 0"></h3>
+            <p id="loc-desc" style="color:#aaa; font-size:0.85em; margin-bottom:15px;"></p>
+            <button id="enter-btn" style="background:var(--primary); width:100%; padding:12px; border-radius:10px; font-weight:bold; cursor:pointer; color:#000; border:none;">启动全息渲染</button>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script type="module">
         import * as THREE from 'three';
         import * as GaussianSplats3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-        const state = { locations: [], currentLoc: null, viewer: null };
+        const state = { locations: [], current: null, viewer: null };
 
-        // 1. 地图初始化 [web:122]
+        // 1. 初始化 2D 地图
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
-        const markerGroup = L.layerGroup().addTo(map);
 
         async function loadLocations() {
             try {
                 const res = await fetch(`https://huggingface.co/datasets/${REPO_ID}/resolve/main/locations.json?t=${Date.now()}`);
+                if (!res.ok) throw new Error("无法读取 locations.json");
                 state.locations = await res.json();
-                markerGroup.clearLayers();
                 state.locations.forEach(loc => {
                     const ready = loc.status === 'ready';
                     L.circleMarker([loc.lat, loc.lon], { 
-                        radius: 10, fillColor: ready ? '#00ff88' : '#666', 
-                        fillOpacity: 0.8, color: '#fff', weight: 2 
-                    }).addTo(markerGroup).on('click', () => {
-                        state.currentLoc = loc;
+                        radius: 9, color: ready ? '#00ff88' : '#ffcc00', fillOpacity: 0.8 
+                    }).addTo(map).on('click', () => {
+                        state.current = loc;
                         document.getElementById('loc-title').innerText = loc.name;
-                        document.getElementById('loc-desc').innerText = loc.desc || "处理中...";
+                        document.getElementById('loc-desc').innerText = loc.desc || "处理中，请稍后...";
                         document.getElementById('info-bar').style.display = 'block';
                         document.getElementById('enter-btn').disabled = !ready;
                         document.getElementById('enter-btn').style.opacity = ready ? "1" : "0.5";
                     });
                 });
-            } catch(e) { console.warn("Syncing..."); }
+            } catch(e) { console.error("初始化加载失败:", e); }
         }
 
-        // PLY 文件预处理：移除额外元素，只保留 vertex 元素
-        function preprocessPlyFile(arrayBuffer) {
-            const textDecoder = new TextDecoder('utf-8', { fatal: false });
-            const headText = textDecoder.decode(arrayBuffer.slice(0, Math.min(8192, arrayBuffer.byteLength)));
-            
-            // 查找 end_header 位置
-            const endHeaderIndex = headText.indexOf('end_header');
-            if (endHeaderIndex === -1) {
-                throw new Error('无法找到 end_header 标记');
-            }
-            
-            // 解析文件头，找到 vertex 元素
-            const lines = headText.substring(0, endHeaderIndex).split('\n');
-            let vertexElementFound = false;
-            let vertexCount = 0;
-            let vertexProperties = [];
-            let dataOffset = endHeaderIndex + 'end_header'.length;
-            
-            // 跳过换行符
-            while (dataOffset < arrayBuffer.byteLength) {
-                const byte = new Uint8Array(arrayBuffer)[dataOffset];
-                if (byte === 0x0A || byte === 0x0D) {
-                    dataOffset++;
-                } else {
-                    break;
-                }
-            }
-            
-            // 解析文件头
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (line.startsWith('element vertex')) {
-                    vertexElementFound = true;
-                    const match = line.match(/element\s+vertex\s+(\d+)/i);
-                    if (match) {
-                        vertexCount = parseInt(match[1]);
-                        console.log(`📊 找到 vertex 元素: ${vertexCount.toLocaleString()} 个顶点`);
-                    }
-                } else if (vertexElementFound && line.startsWith('property')) {
-                    vertexProperties.push(line);
-                } else if (line.startsWith('element ') && !line.startsWith('element vertex')) {
-                    // 遇到其他元素，停止收集 vertex 属性
-                    break;
-                }
-            }
-            
-            if (!vertexElementFound || vertexCount === 0) {
-                throw new Error('PLY 文件中未找到 vertex 元素');
-            }
-            
-            // 计算每个 vertex 的字节大小
-            let vertexSize = 0;
-            vertexProperties.forEach(prop => {
-                if (prop.includes('float')) {
-                    vertexSize += 4;
-                } else if (prop.includes('uint') || prop.includes('int')) {
-                    vertexSize += 4;
-                } else if (prop.includes('uchar') || prop.includes('char')) {
-                    vertexSize += 1;
-                }
-            });
-            
-            console.log(`📏 每个 vertex 大小: ${vertexSize} 字节`);
-            console.log(`📏 Vertex 数据总大小: ${(vertexCount * vertexSize / 1024 / 1024).toFixed(2)} MB`);
-            
-            // 构建新的 PLY 文件头（只包含 vertex 元素）
-            let newHeader = 'ply\n';
-            newHeader += 'format binary_little_endian 1.0\n';
-            newHeader += `element vertex ${vertexCount}\n`;
-            vertexProperties.forEach(prop => {
-                newHeader += prop + '\n';
-            });
-            newHeader += 'end_header\n';
-            
-            const newHeaderBytes = new TextEncoder().encode(newHeader);
-            const vertexDataSize = vertexCount * vertexSize;
-            
-            // 提取 vertex 数据
-            const vertexData = arrayBuffer.slice(dataOffset, dataOffset + vertexDataSize);
-            
-            // 创建新的 ArrayBuffer
-            const newPlyBuffer = new ArrayBuffer(newHeaderBytes.length + vertexDataSize);
-            const newPlyView = new Uint8Array(newPlyBuffer);
-            
-            // 复制文件头
-            newPlyView.set(newHeaderBytes, 0);
-            
-            // 复制 vertex 数据
-            newPlyView.set(new Uint8Array(vertexData), newHeaderBytes.length);
-            
-            console.log(`✅ PLY 文件预处理完成: ${(newPlyBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
-            
-            return newPlyBuffer;
-        }
-
-        // PLY 文件验证函数
-        async function validatePlyFile(url) {
-            try {
-                const response = await fetch(url, { method: 'HEAD' });
-                if (!response.ok) {
-                    throw new Error(`文件不存在或无法访问: ${response.status}`);
-                }
-                const contentLength = response.headers.get('content-length');
-                if (contentLength && parseInt(contentLength) < 100) {
-                    throw new Error('文件太小，可能不是有效的 PLY 文件');
-                }
-                
-                // 获取文件头部进行验证（读取更多字节以检查二进制格式）
-                const headResponse = await fetch(url, { 
-                    headers: { 'Range': 'bytes=0-4095' } 
-                });
-                const headArrayBuffer = await headResponse.arrayBuffer();
-                const headText = new TextDecoder('utf-8', { fatal: false }).decode(headArrayBuffer);
-                
-                // 检查 PLY 文件头
-                if (!headText.startsWith('ply') && !headText.startsWith('PLY')) {
-                    throw new Error('文件不是有效的 PLY 格式（缺少 PLY 头部标识）');
-                }
-                
-                // 检查文件格式（ASCII 还是二进制）
-                const isBinary = headText.includes('binary') || headText.includes('BINARY');
-                const isAscii = headText.includes('ascii') || headText.includes('ASCII') || !isBinary;
-                
-                // 查找文件头结束位置
-                const endHeaderIndex = headText.indexOf('end_header');
-                if (endHeaderIndex === -1) {
-                    throw new Error('PLY 文件头缺少 end_header 标记');
-                }
-                
-                // 计算二进制数据开始位置（end_header + 换行符）
-                const binaryDataStart = endHeaderIndex + 'end_header'.length;
-                // 跳过可能的换行符（\n 或 \r\n）
-                let dataOffset = binaryDataStart;
-                while (dataOffset < headArrayBuffer.byteLength && 
-                       (headText[dataOffset] === '\n' || headText[dataOffset] === '\r')) {
-                    dataOffset++;
-                }
-                
-                console.log('📋 PLY 文件头信息:');
-                console.log('  - 格式:', isBinary ? '二进制' : 'ASCII');
-                console.log('  - 文件头结束位置:', endHeaderIndex);
-                console.log('  - 二进制数据开始位置:', dataOffset);
-                console.log('  - 文件头预览:', headText.substring(0, Math.min(500, endHeaderIndex)));
-                
-                // 检查是否包含必要的 3DGS 字段
-                const requiredFields = ['x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2'];
-                const hasRequiredFields = requiredFields.some(field => headText.includes(field));
-                if (!hasRequiredFields) {
-                    console.warn('警告: PLY 文件可能不包含标准 3DGS 字段');
-                }
-                
-                // 检查元素数量是否合理（避免异常大的数值）
-                const elementMatches = headText.match(/element\s+(\w+)\s+(\d+)/gi);
-                if (elementMatches) {
-                    console.log('  - 元素定义:', elementMatches);
-                    elementMatches.forEach(match => {
-                        const parts = match.match(/element\s+(\w+)\s+(\d+)/i);
-                        if (parts) {
-                            const elementName = parts[1];
-                            const elementCount = parseInt(parts[2]);
-                            console.log(`    * ${elementName}: ${elementCount.toLocaleString()} 个`);
-                            if (elementCount > 100000000) { // 超过 1 亿个元素可能有问题
-                                throw new Error(`文件头中的元素数量异常大: ${elementName} = ${elementCount}，可能是文件格式错误`);
-                            }
-                        }
-                    });
-                }
-                
-                // 如果是二进制格式，检查前几个数据字节
-                if (isBinary && dataOffset < headArrayBuffer.byteLength) {
-                    const dataView = new DataView(headArrayBuffer);
-                    console.log('  - 二进制数据前16字节 (十六进制):');
-                    const hexBytes = [];
-                    for (let i = dataOffset; i < Math.min(dataOffset + 16, headArrayBuffer.byteLength); i++) {
-                        hexBytes.push(dataView.getUint8(i).toString(16).padStart(2, '0'));
-                    }
-                    console.log('    ', hexBytes.join(' '));
-                    
-                    // 检查前4个字节（可能是第一个顶点的 x 坐标）
-                    if (dataOffset + 4 <= headArrayBuffer.byteLength) {
-                        const firstFloat = dataView.getFloat32(dataOffset, true); // little-endian
-                        const firstFloatBE = dataView.getFloat32(dataOffset, false); // big-endian
-                        console.log('  - 第一个浮点数 (little-endian):', firstFloat);
-                        console.log('  - 第一个浮点数 (big-endian):', firstFloatBE);
-                    }
-                }
-                
-                return { isBinary, isAscii, dataOffset, endHeaderIndex };
-            } catch (err) {
-                console.error('PLY 文件验证失败:', err);
-                throw err;
-            }
-        }
-
-        // 2. 使用 antimatter15/splat 库加载 PLY 文件
+        // 2. 3D 渲染核心修复逻辑 [web:63][web:69][web:73]
         document.getElementById('enter-btn').onclick = async () => {
-            if (!state.currentLoc) return;
+            if (!state.current || !state.current.splatPath) return;
+
             const container = document.getElementById('splat-viewer');
             const loader = document.getElementById('loading-overlay');
             container.style.display = 'block';
             loader.style.display = 'flex';
 
-            // 清理旧场景
-            if (state.renderer) {
-                state.renderer.dispose();
-                if (state.scene) {
-                    state.scene.traverse((obj) => {
-                        if (obj.geometry) obj.geometry.dispose();
-                        if (obj.material) {
-                            if (Array.isArray(obj.material)) {
-                                obj.material.forEach(m => m.dispose());
-                            } else {
-                                obj.material.dispose();
-                            }
-                        }
-                    });
-                }
-            }
-
-            const rawUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}?t=${Date.now()}`;
-            
-            // 调试信息
-            console.log('📂 数据集仓库:', REPO_ID);
-            console.log('📄 PLY 文件路径:', state.currentLoc.splatPath);
-            console.log('🔗 完整 URL:', rawUrl);
-            console.log('📚 使用库: @mkkellogg/gaussian-splats-3d');
-            
-            try {
-                const statusEl = document.getElementById('loading-status');
-                
-                // 清理旧视图
-                if (state.viewer) {
-                    try {
-                        state.viewer.stop();
-                        state.viewer.dispose();
-                    } catch(e) {}
-                    state.viewer = null;
-                }
-                
-                if (statusEl) statusEl.innerText = '🚀 正在初始化查看器...';
-                
-                // 初始化 GaussianSplats3D Viewer（按照可工作的代码风格）
-                if (!state.viewer) {
-                    state.viewer = new GaussianSplats3D.Viewer({
-                        rootElement: container,
-                        cameraUp: [0, -1, 0],
-                        initialCameraPosition: [0, 0, 5],
-                        showSceneStatePlaceholder: false
-                    });
-                    await state.viewer.init();
-                    console.log('✅ Viewer 初始化完成');
-                }
-                
-                if (statusEl) statusEl.innerText = '🎨 正在加载 PLY 模型...';
-                
-                // 调试信息
-                console.log('📂 加载 PLY 文件:', rawUrl);
-                console.log('📄 文件路径:', state.currentLoc.splatPath);
-                
-                // 直接使用远程 URL 加载，明确指定 PLY 格式
-                await state.viewer.addSplatScene(rawUrl, {
-                    'format': 1, // 明确指定 PLY 格式 (GaussianSplats3D.SceneFormat.Ply)
-                'onSceneLoad': (scene) => {
-                        loader.style.display = 'none';
-                        state.viewer.start();
-                        
-                        // 自动居中（按照可工作的代码风格）
-                        try {
-                    const mesh = scene.object3D;
-                            if (mesh) {
-                    mesh.rotation.y = Math.PI;
-                    const box = new THREE.Box3().setFromObject(mesh);
-                    const center = box.getCenter(new THREE.Vector3());
-                    mesh.position.sub(center);
-                    const size = box.getSize(new THREE.Vector3());
-                    const cameraZ = Math.abs(Math.max(size.x, size.y) / 2 / Math.tan(state.viewer.camera.fov * Math.PI / 360)) * 1.5;
-                    state.viewer.camera.position.set(0, 0, cameraZ);
-                    state.viewer.camera.lookAt(0, 0, 0);
-                    if(state.viewer.controls) state.viewer.controls.target.set(0, 0, 0);
-                                console.log('✅ 场景加载并居中完成');
-                            }
-                        } catch(e) {
-                            console.warn('⚠️ 自动居中失败:', e);
-                        }
-                    }
-                });
-                
-                console.log('✅ 模型加载完成');
-                
-            } catch (err) {
-                console.error("加载失败:", err);
-                loader.style.display = 'none';
-                alert(`模型加载失败：\n\n错误: ${err.message || err}\n\n请检查文件是否正确上传到 HuggingFace 数据集。`);
-            }
-        };
-
-        document.getElementById('close-splat').onclick = () => {
-            document.getElementById('splat-viewer').style.display = 'none';
+            // 彻底销毁旧实例，清理加载队列，解决 Cannot add splat scene while another load... [web:72]
             if (state.viewer) {
-                try {
-                    state.viewer.stop();
-                    state.viewer.dispose();
-                } catch(e) {}
+                state.viewer.dispose();
                 state.viewer = null;
             }
+
+            // 核心修复配置：GitHub Pages 环境必须关闭共享内存和多线程 [web:69]
+            state.viewer = new GaussianSplats3D.Viewer({
+                rootElement: container,
+                cameraUp: [0, -1, 0],
+                initialCameraPosition: [0, 0, 5],
+                sharedMemoryForWorkers: false, // 修复 DataCloneError
+                webWorkerCount: 0,             // 强制单线程解析，避开安全限制
+                showSceneStatePlaceholder: false
+            });
+
+            await state.viewer.init();
+            
+            // 拼接最新的 URL，防止缓存 404
+            const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.current.splatPath}?t=${Date.now()}`;
+            console.log("正在请求模型:", url);
+
+            try {
+                await state.viewer.addSplatScene(url, {
+                    'onSceneLoad': (scene) => {
+                        loader.style.display = 'none';
+                        const mesh = scene.object3D;
+                        mesh.rotation.y = Math.PI; // Y轴旋转180度适配
+                        
+                        // 自动居中对齐 [web:5]
+                        const box = new THREE.Box3().setFromObject(mesh);
+                        const center = new THREE.Vector3();
+                        box.getCenter(center);
+                        mesh.position.sub(center);
+                    }
+                });
+                state.viewer.start();
+            } catch (err) {
+                console.error("加载失败:", err);
+                alert("渲染引擎启动失败，请检查网络或模型文件。");
+                loader.style.display = 'none';
+            }
         };
 
+        document.getElementById('close-btn').onclick = () => {
+            document.getElementById('splat-viewer').style.display = 'none';
+            if (state.viewer) state.viewer.stop();
+        };
+
+        // 首次加载
         loadLocations();
     </script>
 </body>
