@@ -32,7 +32,8 @@
         input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 12px; border-radius: 8px; margin: 10px 0; }
         #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; color: white; z-index: 2050; pointer-events: none; }
         /* 确保 Viewer 创建的 canvas 可以接收鼠标事件 */
-        #splat-viewer canvas { pointer-events: auto !important; position: relative; z-index: 1; }
+        /* 确保所有 canvas 都可以交互，主渲染 canvas 在最上层 */
+        #splat-viewer canvas { pointer-events: auto !important; position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; z-index: 100 !important; }
     </style>
     <script type="importmap">{ "imports": { 
             "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
@@ -276,7 +277,7 @@
                             state.viewer.camera.exposure = 1.2;
                         }
                         
-                        // 确保 Viewer 的渲染 canvas 在最上层，其他 canvas 不阻挡
+                        // 确保 Viewer 的渲染 canvas 在最上层，其他元素不阻挡
                         setTimeout(() => {
                             const allCanvases = container.querySelectorAll('canvas');
                             console.log(`找到 ${allCanvases.length} 个 canvas 元素`);
@@ -294,17 +295,18 @@
                             });
                             
                             if (mainCanvas) {
-                                // 设置主渲染 canvas 在最上层
+                                // 设置主渲染 canvas 在最上层，使用最高优先级
                                 mainCanvas.style.pointerEvents = 'auto';
                                 mainCanvas.style.position = 'absolute';
                                 mainCanvas.style.top = '0';
                                 mainCanvas.style.left = '0';
                                 mainCanvas.style.width = '100%';
                                 mainCanvas.style.height = '100%';
-                                mainCanvas.style.zIndex = '10';
-                                console.log('✅ 主渲染 Canvas 已设置为可交互，z-index: 10');
+                                mainCanvas.style.zIndex = '100';
+                                mainCanvas.style.setProperty('z-index', '100', 'important');
+                                console.log('✅ 主渲染 Canvas 已设置为可交互，z-index: 100');
                                 
-                                // 其他 canvas 设置为不阻挡鼠标事件
+                                // 其他 canvas 设置为不阻挡鼠标事件，但保持在较低层级
                                 allCanvases.forEach(canvas => {
                                     if (canvas !== mainCanvas) {
                                         canvas.style.pointerEvents = 'none';
@@ -312,6 +314,9 @@
                                         console.log('⚠️ 其他 Canvas 已禁用鼠标事件');
                                     }
                                 });
+                                
+                                // 确保主 canvas 在 DOM 中位于最后（这样在 z-index 相同时会在最上层）
+                                container.appendChild(mainCanvas);
                             }
                             
                             // 确保所有其他元素（除了返回按钮）不阻挡 canvas
@@ -322,7 +327,14 @@
                                     child.style.zIndex = '0';
                                 }
                             });
-                        }, 300);
+                            
+                            // 检查是否有任何元素在 canvas 之上
+                            const elementsAbove = document.elementsFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+                            const canvasIndex = elementsAbove.findIndex(el => el.tagName === 'CANVAS');
+                            if (canvasIndex > 0) {
+                                console.warn('⚠️ 发现元素在 canvas 之上:', elementsAbove.slice(0, canvasIndex).map(el => el.tagName + (el.id ? '#' + el.id : '')));
+                            }
+                        }, 500);
                 }
             });
             state.viewer.start();
