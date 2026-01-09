@@ -12,6 +12,7 @@
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; }
         .pointer-auto { pointer-events: auto; }
         #lang-toggle { position: absolute; top: 20px; left: 20px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; }
+        #map-style-toggle { position: absolute; top: 20px; left: 90px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; font-size: 0.9em; }
         #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; z-index: 1001; }
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
         #splat-viewer { position: absolute; inset: 0; background: transparent; z-index: 9999; display: none; }
@@ -34,8 +35,8 @@
         #splat-viewer canvas { pointer-events: auto !important; position: relative; z-index: 1; }
     </style>
     <script type="importmap">{ "imports": { 
-        "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
-        "@huggingface/hub": "https://cdn.jsdelivr.net/npm/@huggingface/hub@0.15.1/+esm" 
+            "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
+            "@huggingface/hub": "https://cdn.jsdelivr.net/npm/@huggingface/hub@0.15.1/+esm"
     }}</script>
 </head>
 <body>
@@ -61,6 +62,7 @@
 
     <div id="ui-layer">
         <button id="lang-toggle" class="pointer-auto">EN / 中</button>
+        <button id="map-style-toggle" class="pointer-auto">🗺️ 地图样式</button>
         <button id="upload-btn" class="pointer-auto">+ 新增任务</button>
         <div id="info-bar" class="pointer-auto">
             <h3 id="loc-title" style="margin:0"></h3>
@@ -84,8 +86,7 @@
                 <button id="pick-btn" style="background:var(--accent); border:none; padding:0 15px; border-radius:8px; color:white; cursor:pointer;">拾取</button>
             </div>
             <input type="file" id="photo-input" accept="image/*">
-            <textarea id="desc-input" rows="2" placeholder="请输入描述 (中文)..."></textarea>
-            <textarea id="desc-input-en" rows="2" placeholder="英文描述 (将自动翻译，留空即可)" readonly style="opacity:0.7;"></textarea>
+            <textarea id="desc-input" rows="2" placeholder="请输入描述 (中文，将自动翻译为英文)..."></textarea>
             <button id="submit-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; margin-top:10px;">上传任务</button>
             <button onclick="document.getElementById('modal-overlay').style.display='none'" style="width:100%; background:none; border:none; color:#888; margin-top:10px; cursor:pointer;">取消</button>
         </div>
@@ -145,8 +146,51 @@
 
         // 1. 初始化地图 [web:13]
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+        
+        // 地图样式配置
+        const mapStyles = {
+            dark: {
+                name: '深色',
+                url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+            },
+            light: {
+                name: '浅色',
+                url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+            },
+            satellite: {
+                name: '卫星',
+                url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+            },
+            terrain: {
+                name: '地形',
+                url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'
+            },
+            watercolor: {
+                name: '水彩',
+                url: 'https://stamen-tiles-{s}.a.ssl.fastly.net/watercolor/{z}/{x}/{y}.jpg'
+            }
+        };
+        
+        let currentMapStyle = 'dark';
+        let currentTileLayer = L.tileLayer(mapStyles[currentMapStyle].url).addTo(map);
         const markerGroup = L.layerGroup().addTo(map);
+        
+        // 地图样式切换功能
+        document.getElementById('map-style-toggle').onclick = () => {
+            const styles = Object.keys(mapStyles);
+            const currentIndex = styles.indexOf(currentMapStyle);
+            const nextIndex = (currentIndex + 1) % styles.length;
+            currentMapStyle = styles[nextIndex];
+            
+            // 移除旧图层
+            map.removeLayer(currentTileLayer);
+            
+            // 添加新图层
+            currentTileLayer = L.tileLayer(mapStyles[currentMapStyle].url).addTo(map);
+            
+            // 更新按钮文本
+            document.getElementById('map-style-toggle').innerText = `🗺️ ${mapStyles[currentMapStyle].name}`;
+        };
 
         // 2. 数据加载与同步 [web:18]
         async function loadLocations() {
@@ -207,15 +251,15 @@
             const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
             
             try {
-                await state.viewer.addSplatScene(url, {
-                    'onSceneLoad': (scene) => {
+            await state.viewer.addSplatScene(url, {
+                'onSceneLoad': (scene) => {
                         // 确保加载层完全隐藏
                         loader.style.display = 'none';
                         loader.style.pointerEvents = 'none';
                         
-                        const mesh = scene.object3D;
-                        mesh.rotation.y = Math.PI;
-                        const box = new THREE.Box3().setFromObject(mesh);
+                    const mesh = scene.object3D;
+                    mesh.rotation.y = Math.PI;
+                    const box = new THREE.Box3().setFromObject(mesh);
                         mesh.position.sub(box.getCenter(new THREE.Vector3())); // 居中 [web:5]
                         
                         // 调整渲染设置，让画面更亮
@@ -279,9 +323,9 @@
                                 }
                             });
                         }, 300);
-                    }
-                });
-                state.viewer.start();
+                }
+            });
+            state.viewer.start();
             } catch (err) { 
                 console.error(err); 
                 loader.style.display = 'none';
@@ -313,18 +357,15 @@
             localStorage.setItem('DEEPL_KEY', state.deeplKey);
         });
         
-        // 自动翻译：当输入中文描述时，自动翻译为英文
+        // 自动翻译：当输入中文描述时，自动翻译为英文（保存到 state 中）
+        let autoTranslatedDescEn = '';
         document.getElementById('desc-input').addEventListener('input', async (e) => {
             const descCn = e.target.value.trim();
-            const descEnInput = document.getElementById('desc-input-en');
             if (descCn && state.deeplKey) {
-                descEnInput.placeholder = '正在翻译...';
-                const translated = await translateWithDeepL(descCn);
-                descEnInput.value = translated;
-                descEnInput.placeholder = '英文描述 (自动翻译)';
-            } else if (!descCn) {
-                descEnInput.value = '';
-                descEnInput.placeholder = '英文描述 (将自动翻译，留空即可)';
+                autoTranslatedDescEn = await translateWithDeepL(descCn);
+                console.log('✅ 描述已自动翻译为英文');
+            } else {
+                autoTranslatedDescEn = '';
             }
         });
         
@@ -347,7 +388,6 @@
             const name = document.getElementById('loc-name').value.trim();
             let nameEn = document.getElementById('loc-name-en').value.trim();
             const desc = document.getElementById('desc-input').value.trim();
-            let descEn = document.getElementById('desc-input-en').value.trim();
             
             if (!token || !file || !state.selectedCoords || !name) {
                 alert("请填写完整信息：Token、照片、坐标和中文名称");
@@ -360,12 +400,13 @@
             }
             if (!nameEn) nameEn = name;
             
-            // 如果没有英文描述，尝试翻译
+            // 获取自动翻译的英文描述，如果没有则翻译
+            let descEn = autoTranslatedDescEn;
             if (!descEn && desc && state.deeplKey) {
                 descEn = await translateWithDeepL(desc);
             }
             if (!descEn) descEn = desc || "";
-            
+
             const ts = Date.now();
             const safeName = file.name.replace(/[^a-z0-9.]/gi, '_');
             const photoPath = `inputs/${ts}_${safeName}`;
@@ -384,7 +425,7 @@
             };
             
             const newLocations = [...state.locations, newLoc];
-            
+
             try {
                 await commit({
                     credentials: { accessToken: token },
@@ -404,8 +445,7 @@
                 document.getElementById('lat-lon').value = '';
                 document.getElementById('photo-input').value = '';
                 document.getElementById('desc-input').value = '';
-                document.getElementById('desc-input-en').value = '';
-                document.getElementById('desc-input-en').placeholder = '英文描述 (将自动翻译，留空即可)';
+                autoTranslatedDescEn = '';
                 state.selectedCoords = null;
                 loadLocations();
             } catch (e) {
