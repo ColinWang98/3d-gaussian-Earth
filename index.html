@@ -76,15 +76,16 @@
         <div class="modal-box">
             <h3 style="margin:0 0 15px 0">创建重建任务</h3>
             <input type="password" id="hf-token" placeholder="Hugging Face Write Token">
+            <input type="password" id="deepl-key" placeholder="DeepL API Key (可选，用于自动翻译)">
             <input type="text" id="loc-name" placeholder="地点名称 (中文)">
-            <input type="text" id="loc-name-en" placeholder="Location Name (English)">
+            <input type="text" id="loc-name-en" placeholder="Location Name (English，留空将自动翻译)">
             <div style="display:flex; gap:8px;">
                 <input type="text" id="lat-lon" readonly placeholder="点击地图拾取坐标">
                 <button id="pick-btn" style="background:var(--accent); border:none; padding:0 15px; border-radius:8px; color:white; cursor:pointer;">拾取</button>
             </div>
             <input type="file" id="photo-input" accept="image/*">
             <textarea id="desc-input" rows="2" placeholder="请输入描述 (中文)..."></textarea>
-            <textarea id="desc-input-en" rows="2" placeholder="Please enter description (English)..."></textarea>
+            <textarea id="desc-input-en" rows="2" placeholder="英文描述 (将自动翻译，留空即可)" readonly style="opacity:0.7;"></textarea>
             <button id="submit-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; margin-top:10px;">上传任务</button>
             <button onclick="document.getElementById('modal-overlay').style.display='none'" style="width:100%; background:none; border:none; color:#888; margin-top:10px; cursor:pointer;">取消</button>
         </div>
@@ -97,7 +98,31 @@
         import * as GaussianSplats3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-        const state = { locations: [], currentLoc: null, lang: 'cn', viewer: null, isPicking: false, selectedCoords: null };
+        const state = { locations: [], currentLoc: null, lang: 'cn', viewer: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '' };
+        
+        // DeepL 自动翻译函数
+        async function translateWithDeepL(text, targetLang = 'EN') {
+            if (!state.deeplKey || !text) return text;
+            try {
+                const res = await fetch('https://api-free.deepl.com/v2/translate', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `DeepL-Auth-Key ${state.deeplKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: [text],
+                        target_lang: targetLang
+                    })
+                });
+                if (!res.ok) throw new Error(`DeepL API 错误: ${res.status}`);
+                const data = await res.json();
+                return data.translations[0].text;
+            } catch (e) {
+                console.warn('DeepL 翻译失败:', e);
+                return text; // 翻译失败时返回原文
+            }
+        }
 
         function updateLangUI() {
             const langBtn = document.getElementById('lang-toggle');
@@ -207,16 +232,53 @@
                             state.viewer.camera.exposure = 1.2;
                         }
                         
-                        // 确保 Viewer 的 canvas 可以接收鼠标事件
+                        // 确保 Viewer 的渲染 canvas 在最上层，其他 canvas 不阻挡
                         setTimeout(() => {
-                            const canvas = container.querySelector('canvas');
-                            if (canvas) {
-                                canvas.style.pointerEvents = 'auto';
-                                canvas.style.position = 'relative';
-                                canvas.style.zIndex = '1';
-                                console.log('✅ Canvas 已设置为可交互');
+                            const allCanvases = container.querySelectorAll('canvas');
+                            console.log(`找到 ${allCanvases.length} 个 canvas 元素`);
+                            
+                            // 找到主要的渲染 canvas（通常是最大的，或者包含 3D 内容的）
+                            let mainCanvas = null;
+                            let maxArea = 0;
+                            
+                            allCanvases.forEach(canvas => {
+                                const area = canvas.width * canvas.height;
+                                if (area > maxArea) {
+                                    maxArea = area;
+                                    mainCanvas = canvas;
+                                }
+                            });
+                            
+                            if (mainCanvas) {
+                                // 设置主渲染 canvas 在最上层
+                                mainCanvas.style.pointerEvents = 'auto';
+                                mainCanvas.style.position = 'absolute';
+                                mainCanvas.style.top = '0';
+                                mainCanvas.style.left = '0';
+                                mainCanvas.style.width = '100%';
+                                mainCanvas.style.height = '100%';
+                                mainCanvas.style.zIndex = '10';
+                                console.log('✅ 主渲染 Canvas 已设置为可交互，z-index: 10');
+                                
+                                // 其他 canvas 设置为不阻挡鼠标事件
+                                allCanvases.forEach(canvas => {
+                                    if (canvas !== mainCanvas) {
+                                        canvas.style.pointerEvents = 'none';
+                                        canvas.style.zIndex = '1';
+                                        console.log('⚠️ 其他 Canvas 已禁用鼠标事件');
+                                    }
+                                });
                             }
-                        }, 100);
+                            
+                            // 确保所有其他元素（除了返回按钮）不阻挡 canvas
+                            const allChildren = Array.from(container.children);
+                            allChildren.forEach(child => {
+                                if (child.id !== 'close-splat' && child.tagName !== 'CANVAS' && child.id !== 'loading-overlay') {
+                                    child.style.pointerEvents = 'none';
+                                    child.style.zIndex = '0';
+                                }
+                            });
+                        }, 300);
                     }
                 });
                 state.viewer.start();
@@ -244,19 +306,65 @@
             } catch (e) { alert("删除失败，请检查权限。"); }
         };
 
+        // 保存 DeepL Key
+        document.getElementById('deepl-key').value = state.deeplKey;
+        document.getElementById('deepl-key').addEventListener('change', (e) => {
+            state.deeplKey = e.target.value.trim();
+            localStorage.setItem('DEEPL_KEY', state.deeplKey);
+        });
+        
+        // 自动翻译：当输入中文描述时，自动翻译为英文
+        document.getElementById('desc-input').addEventListener('input', async (e) => {
+            const descCn = e.target.value.trim();
+            const descEnInput = document.getElementById('desc-input-en');
+            if (descCn && state.deeplKey) {
+                descEnInput.placeholder = '正在翻译...';
+                const translated = await translateWithDeepL(descCn);
+                descEnInput.value = translated;
+                descEnInput.placeholder = '英文描述 (自动翻译)';
+            } else if (!descCn) {
+                descEnInput.value = '';
+                descEnInput.placeholder = '英文描述 (将自动翻译，留空即可)';
+            }
+        });
+        
+        // 自动翻译：当输入中文名称时，自动翻译为英文
+        document.getElementById('loc-name').addEventListener('input', async (e) => {
+            const nameCn = e.target.value.trim();
+            const nameEnInput = document.getElementById('loc-name-en');
+            if (nameCn && state.deeplKey && !nameEnInput.value.trim()) {
+                nameEnInput.placeholder = '正在翻译...';
+                const translated = await translateWithDeepL(nameCn);
+                nameEnInput.value = translated;
+                nameEnInput.placeholder = 'Location Name (English，留空将自动翻译)';
+            }
+        });
+        
         // 5. 上传任务逻辑
         document.getElementById('submit-btn').onclick = async () => {
             const token = document.getElementById('hf-token').value.trim();
             const file = document.getElementById('photo-input').files[0];
             const name = document.getElementById('loc-name').value.trim();
-            const nameEn = document.getElementById('loc-name-en').value.trim();
+            let nameEn = document.getElementById('loc-name-en').value.trim();
             const desc = document.getElementById('desc-input').value.trim();
-            const descEn = document.getElementById('desc-input-en').value.trim();
+            let descEn = document.getElementById('desc-input-en').value.trim();
             
             if (!token || !file || !state.selectedCoords || !name) {
                 alert("请填写完整信息：Token、照片、坐标和中文名称");
                 return;
             }
+            
+            // 如果没有英文名称，尝试翻译
+            if (!nameEn && state.deeplKey) {
+                nameEn = await translateWithDeepL(name);
+            }
+            if (!nameEn) nameEn = name;
+            
+            // 如果没有英文描述，尝试翻译
+            if (!descEn && desc && state.deeplKey) {
+                descEn = await translateWithDeepL(desc);
+            }
+            if (!descEn) descEn = desc || "";
             
             const ts = Date.now();
             const safeName = file.name.replace(/[^a-z0-9.]/gi, '_');
@@ -267,9 +375,9 @@
                 lat: state.selectedCoords.lat,
                 lon: state.selectedCoords.lng,
                 name: name,
-                name_en: nameEn || name,
+                name_en: nameEn,
                 desc: desc || "",
-                desc_en: descEn || desc || "",
+                desc_en: descEn,
                 photoPath: photoPath,
                 splatPath: "",
                 status: "processing"
@@ -289,7 +397,7 @@
                 });
                 alert("任务上传成功！");
                 document.getElementById('modal-overlay').style.display = 'none';
-                // 清空表单
+                // 清空表单（保留 DeepL Key）
                 document.getElementById('hf-token').value = '';
                 document.getElementById('loc-name').value = '';
                 document.getElementById('loc-name-en').value = '';
@@ -297,6 +405,7 @@
                 document.getElementById('photo-input').value = '';
                 document.getElementById('desc-input').value = '';
                 document.getElementById('desc-input-en').value = '';
+                document.getElementById('desc-input-en').placeholder = '英文描述 (将自动翻译，留空即可)';
                 state.selectedCoords = null;
                 loadLocations();
             } catch (e) {
