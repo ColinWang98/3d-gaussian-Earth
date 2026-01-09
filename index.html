@@ -14,8 +14,10 @@
         #lang-toggle { position: absolute; top: 20px; left: 20px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; }
         #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; z-index: 1001; }
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
-        #splat-viewer { position: absolute; inset: 0; background: #1a1a1a; z-index: 9999; display: none; }
-        #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; }
+        #splat-viewer { position: absolute; inset: 0; background: transparent; z-index: 9999; display: none; }
+        /* 确保 splat-viewer 本身不阻挡鼠标事件，只有子元素可以交互 */
+        #splat-viewer > *:not(canvas):not(#close-splat) { pointer-events: none; }
+        #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; }
         /* 为了确保 3D 画布可交互，聊天窗口不拦截鼠标事件 */
         #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: none; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
         #chat-msgs { flex: 1; padding: 12px; overflow-y: auto; font-size: 0.85em; color: #eee; display: flex; flex-direction: column; gap: 10px; }
@@ -28,6 +30,8 @@
         .modal-box { background: #151525; padding: 25px; border-radius: 16px; width: 90%; max-width: 400px; color: white; border: 1px solid #333; }
         input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 12px; border-radius: 8px; margin: 10px 0; }
         #loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; color: white; z-index: 2050; pointer-events: none; }
+        /* 确保 Viewer 创建的 canvas 可以接收鼠标事件 */
+        #splat-viewer canvas { pointer-events: auto !important; position: relative; z-index: 1; }
     </style>
     <script type="importmap">{ "imports": { 
         "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
@@ -72,13 +76,15 @@
         <div class="modal-box">
             <h3 style="margin:0 0 15px 0">创建重建任务</h3>
             <input type="password" id="hf-token" placeholder="Hugging Face Write Token">
-            <input type="text" id="loc-name" placeholder="地点名称">
+            <input type="text" id="loc-name" placeholder="地点名称 (中文)">
+            <input type="text" id="loc-name-en" placeholder="Location Name (English)">
             <div style="display:flex; gap:8px;">
                 <input type="text" id="lat-lon" readonly placeholder="点击地图拾取坐标">
                 <button id="pick-btn" style="background:var(--accent); border:none; padding:0 15px; border-radius:8px; color:white; cursor:pointer;">拾取</button>
             </div>
             <input type="file" id="photo-input" accept="image/*">
-            <textarea id="desc-input" rows="2" placeholder="请输入描述..."></textarea>
+            <textarea id="desc-input" rows="2" placeholder="请输入描述 (中文)..."></textarea>
+            <textarea id="desc-input-en" rows="2" placeholder="Please enter description (English)..."></textarea>
             <button id="submit-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; margin-top:10px;">上传任务</button>
             <button onclick="document.getElementById('modal-overlay').style.display='none'" style="width:100%; background:none; border:none; color:#888; margin-top:10px; cursor:pointer;">取消</button>
         </div>
@@ -178,7 +184,10 @@
             try {
                 await state.viewer.addSplatScene(url, {
                     'onSceneLoad': (scene) => {
+                        // 确保加载层完全隐藏
                         loader.style.display = 'none';
+                        loader.style.pointerEvents = 'none';
+                        
                         const mesh = scene.object3D;
                         mesh.rotation.y = Math.PI;
                         const box = new THREE.Box3().setFromObject(mesh);
@@ -197,10 +206,25 @@
                         if (state.viewer.camera && state.viewer.camera.exposure !== undefined) {
                             state.viewer.camera.exposure = 1.2;
                         }
+                        
+                        // 确保 Viewer 的 canvas 可以接收鼠标事件
+                        setTimeout(() => {
+                            const canvas = container.querySelector('canvas');
+                            if (canvas) {
+                                canvas.style.pointerEvents = 'auto';
+                                canvas.style.position = 'relative';
+                                canvas.style.zIndex = '1';
+                                console.log('✅ Canvas 已设置为可交互');
+                            }
+                        }, 100);
                     }
                 });
                 state.viewer.start();
-            } catch (err) { console.error(err); loader.style.display = 'none'; }
+            } catch (err) { 
+                console.error(err); 
+                loader.style.display = 'none';
+                loader.style.pointerEvents = 'none';
+            }
         };
 
         // 4. 物理删除逻辑 [web:31][web:79][web:83]
@@ -220,7 +244,67 @@
             } catch (e) { alert("删除失败，请检查权限。"); }
         };
 
-        // 5. 其他交互逻辑 (拾取、上传、AI)
+        // 5. 上传任务逻辑
+        document.getElementById('submit-btn').onclick = async () => {
+            const token = document.getElementById('hf-token').value.trim();
+            const file = document.getElementById('photo-input').files[0];
+            const name = document.getElementById('loc-name').value.trim();
+            const nameEn = document.getElementById('loc-name-en').value.trim();
+            const desc = document.getElementById('desc-input').value.trim();
+            const descEn = document.getElementById('desc-input-en').value.trim();
+            
+            if (!token || !file || !state.selectedCoords || !name) {
+                alert("请填写完整信息：Token、照片、坐标和中文名称");
+                return;
+            }
+            
+            const ts = Date.now();
+            const safeName = file.name.replace(/[^a-z0-9.]/gi, '_');
+            const photoPath = `inputs/${ts}_${safeName}`;
+            
+            const newLoc = {
+                id: ts,
+                lat: state.selectedCoords.lat,
+                lon: state.selectedCoords.lng,
+                name: name,
+                name_en: nameEn || name,
+                desc: desc || "",
+                desc_en: descEn || desc || "",
+                photoPath: photoPath,
+                splatPath: "",
+                status: "processing"
+            };
+            
+            const newLocations = [...state.locations, newLoc];
+            
+            try {
+                await commit({
+                    credentials: { accessToken: token },
+                    repo: { type: "dataset", name: REPO_ID },
+                    title: `Upload task ${ts}`,
+                    operations: [
+                        { operation: "addOrUpdate", path: photoPath, content: file },
+                        { operation: "addOrUpdate", path: "locations.json", content: new Blob([JSON.stringify(newLocations, null, 2)], {type:"application/json"}) }
+                    ]
+                });
+                alert("任务上传成功！");
+                document.getElementById('modal-overlay').style.display = 'none';
+                // 清空表单
+                document.getElementById('hf-token').value = '';
+                document.getElementById('loc-name').value = '';
+                document.getElementById('loc-name-en').value = '';
+                document.getElementById('lat-lon').value = '';
+                document.getElementById('photo-input').value = '';
+                document.getElementById('desc-input').value = '';
+                document.getElementById('desc-input-en').value = '';
+                state.selectedCoords = null;
+                loadLocations();
+            } catch (e) {
+                alert("上传失败：" + (e.message || e));
+            }
+        };
+
+        // 6. 其他交互逻辑 (拾取、上传、AI)
         document.getElementById('upload-btn').onclick = () => document.getElementById('modal-overlay').style.display = 'flex';
         document.getElementById('pick-btn').onclick = () => { document.getElementById('modal-overlay').style.display = 'none'; state.isPicking = true; };
         map.on('click', (e) => {
