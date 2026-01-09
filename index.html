@@ -11,13 +11,15 @@
         #map-background { position: absolute; inset: 0; z-index: 1; }
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; }
         .pointer-auto { pointer-events: auto; }
+        #app-title { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); color: white; font-size: 28px; font-weight: 300; letter-spacing: 2px; z-index: 1001; pointer-events: none; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
         #lang-toggle { position: absolute; top: 20px; left: 20px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; }
         #map-style-toggle { position: absolute; top: 20px; left: 90px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; font-size: 0.9em; }
         #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; z-index: 1001; }
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
         #splat-viewer { position: absolute; inset: 0; background: transparent; z-index: 9999; display: none; }
-        /* 确保 splat-viewer 本身不阻挡鼠标事件，只有子元素可以交互 */
-        #splat-viewer > *:not(canvas):not(#close-splat) { pointer-events: none; }
+        /* 确保 splat-viewer 本身不阻挡鼠标事件，只有子元素可以交互
+           允许返回按钮和聊天窗口接收鼠标事件 */
+        #splat-viewer > *:not(canvas):not(#close-splat):not(#chat-window) { pointer-events: none; }
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; }
         /* 为了确保 3D 画布可交互，聊天窗口不拦截鼠标事件 */
         #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: none; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
@@ -77,6 +79,7 @@
     </div>
 
     <div id="ui-layer">
+        <h1 id="app-title">Spatial Memory Map</h1>
         <button id="lang-toggle" class="pointer-auto">EN / 中</button>
         <button id="map-style-toggle" class="pointer-auto">🗺️ 地图样式</button>
         <button id="upload-btn" class="pointer-auto">+ 新增任务</button>
@@ -116,6 +119,7 @@
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
         const state = { locations: [], currentLoc: null, lang: 'cn', viewer: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '' };
+        let ACTIVE_GEMINI_KEY = localStorage.getItem('MY_GEMINI_KEY') || '';
         
         // DeepL 自动翻译函数
         async function translateWithDeepL(text, targetLang = 'EN') {
@@ -158,6 +162,80 @@
                     descEl.innerText = loc.desc_en || loc.desc || 'Processing...';
                 }
             }
+
+            // 同步更新地图样式按钮的文案
+            updateMapStyleButton();
+        }
+
+        // ===== AI 聊天相关 =====
+        function addChatMessage(role, text) {
+            const msgs = document.getElementById('chat-msgs');
+            if (!msgs) return;
+            const div = document.createElement('div');
+            div.className = `msg msg-${role}`;
+            div.innerText = text;
+            msgs.appendChild(div);
+            msgs.scrollTop = msgs.scrollHeight;
+        }
+
+        function showChatUI() {
+            const chatWin = document.getElementById('chat-window');
+            if (!chatWin) return;
+            chatWin.style.display = 'flex';
+
+            const cfg = document.getElementById('gemini-config-ui');
+            const main = document.getElementById('chat-main-ui');
+
+            if (ACTIVE_GEMINI_KEY) {
+                cfg.style.display = 'none';
+                main.style.display = 'flex';
+                // 首次打开当前地点时打个招呼
+                if (document.getElementById('chat-msgs').children.length === 0 && state.currentLoc) {
+                    const locName = state.currentLoc.name || state.currentLoc.name_en || '这个地方';
+                    addChatMessage('agent', `你好，我是这个场景的拍摄者，现在带你看：${locName}。可以随便问我问题～`);
+                }
+            } else {
+                cfg.style.display = 'block';
+                main.style.display = 'none';
+            }
+        }
+
+        async function handleChat() {
+            if (!ACTIVE_GEMINI_KEY) {
+                alert('请先在右下角输入 Gemini API Key');
+                return;
+            }
+            const input = document.getElementById('chat-input');
+            const text = (input.value || '').trim();
+            if (!text) return;
+            addChatMessage('user', text);
+            input.value = '';
+
+            const loc = state.currentLoc || {};
+            const locName = loc.name_en || loc.name || '';
+            const locDesc = loc.desc_en || loc.desc || '';
+            const sys = `你是 3D 全息场景的拍摄者，以第一人称、口语化简短回答用户问题，多用“唔”、“啊”、“其实”等口头语。
+地点: ${locName}
+背景: ${locDesc}`;
+
+            try {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [
+                            { role: 'user', parts: [{ text: sys }] },
+                            { role: 'user', parts: [{ text }] }
+                        ]
+                    })
+                });
+                const data = await res.json();
+                const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || '唔，我一时间有点想不到，等我再研究下先～';
+                addChatMessage('agent', reply);
+            } catch (e) {
+                console.error('Gemini 调用失败:', e);
+                addChatMessage('agent', '唔，AI 那边连不上网络了，一阵再试试啦。');
+            }
         }
 
         // 1. 初始化地图 [web:13]
@@ -166,30 +244,39 @@
         // 地图样式配置
         const mapStyles = {
             dark: {
-                name: '深色',
+                nameCn: '深色',
+                nameEn: 'Dark',
                 url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
             },
             light: {
-                name: '浅色',
+                nameCn: '浅色',
+                nameEn: 'Light',
                 url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
             },
             satellite: {
-                name: '卫星',
+                nameCn: '卫星',
+                nameEn: 'Satellite',
                 url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
             },
             terrain: {
-                name: '地形',
+                nameCn: '地形',
+                nameEn: 'Terrain',
                 url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'
-            },
-            watercolor: {
-                name: '水彩',
-                url: 'https://stamen-tiles-{s}.a.ssl.fastly.net/watercolor/{z}/{x}/{y}.jpg'
             }
         };
         
         let currentMapStyle = 'dark';
         let currentTileLayer = L.tileLayer(mapStyles[currentMapStyle].url).addTo(map);
         const markerGroup = L.layerGroup().addTo(map);
+
+        function updateMapStyleButton() {
+            const btn = document.getElementById('map-style-toggle');
+            if (!btn) return;
+            const styleCfg = mapStyles[currentMapStyle];
+            if (!styleCfg) return;
+            const name = state.lang === 'cn' ? styleCfg.nameCn : styleCfg.nameEn;
+            btn.innerText = `🗺️ ${name}`;
+        }
         
         // 地图样式切换功能
         document.getElementById('map-style-toggle').onclick = () => {
@@ -204,8 +291,8 @@
             // 添加新图层
             currentTileLayer = L.tileLayer(mapStyles[currentMapStyle].url).addTo(map);
             
-            // 更新按钮文本
-            document.getElementById('map-style-toggle').innerText = `🗺️ ${mapStyles[currentMapStyle].name}`;
+            // 更新按钮文本（根据当前语言显示中/英文）
+            updateMapStyleButton();
         };
 
         // 2. 数据加载与同步 [web:18]
@@ -236,12 +323,13 @@
             } catch(e) { console.error("加载失败", e); }
         }
 
-        // 3. 核心 3D 渲染修复 [web:63][web:69][web:72]
+        // 3. 核心 3D 渲染修复 + 进入 3D 视图时打开 AI 聊天 [web:63][web:69][web:72]
         document.getElementById('enter-btn').onclick = async () => {
             const container = document.getElementById('splat-viewer');
             const loader = document.getElementById('loading-overlay');
             container.style.display = 'block';
             loader.style.display = 'flex';
+            loader.innerText = '🚀 正在加载 3D 全息模型...';
 
             // 打开 3D 视图时隐藏地图和上层 UI，避免挡住模型交互
             document.getElementById('ui-layer').style.display = 'none';
@@ -249,9 +337,8 @@
             // 确保任务弹窗关闭，避免灰色蒙层残留
             const modal = document.getElementById('modal-overlay');
             if (modal) modal.style.display = 'none';
-            // 暂时隐藏聊天窗口，避免任何遮挡
-            const chatWin = document.getElementById('chat-window');
-            if (chatWin) chatWin.style.display = 'none';
+            // 显示聊天窗口（由 showChatUI 控制内部内容）
+            showChatUI();
 
             if (state.viewer) { state.viewer.dispose(); state.viewer = null; }
 
@@ -502,8 +589,23 @@
 
         document.getElementById('save-key-btn').onclick = () => {
             const key = document.getElementById('user-gemini-key').value.trim();
-            if (key) { localStorage.setItem('MY_GEMINI_KEY', key); document.getElementById('gemini-config-ui').style.display = 'none'; document.getElementById('chat-main-ui').style.display = 'flex'; }
+            if (key) {
+                ACTIVE_GEMINI_KEY = key;
+                localStorage.setItem('MY_GEMINI_KEY', key);
+                document.getElementById('gemini-config-ui').style.display = 'none';
+                document.getElementById('chat-main-ui').style.display = 'flex';
+                addChatMessage('agent', '好呀，我已经连上 Gemini 了，随便问我关于这个场景的任何问题～');
+            }
         };
+
+        // 聊天发送按钮和回车键
+        document.getElementById('chat-send').onclick = () => { handleChat(); };
+        document.getElementById('chat-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleChat();
+            }
+        });
 
         // 语言切换按钮
         document.getElementById('lang-toggle').onclick = () => {
