@@ -252,9 +252,19 @@
             const loc = state.currentLoc || {};
             const locName = loc.name_en || loc.name || '';
             const locDesc = loc.desc_en || loc.desc || '';
-            const sys = `你是 3D 全息场景的拍摄者，以第一人称、口语化简短回答用户问题，多用"唔"、"啊"、"其实"等口头语。
-地点: ${locName}
-背景: ${locDesc}`;
+            const sys = `你是这张照片的拍摄者，也是这个 3D 全息场景的创建者。用户正在查看你拍摄并重建的场景。
+
+你的身份：照片提供者/场景创建者
+场景地点：${locName}
+场景描述：${locDesc}
+
+请以照片拍摄者的第一人称身份，用口语化、亲切的方式与用户聊天。你可以：
+- 分享拍摄这个场景时的经历和感受
+- 描述场景中的细节和特色
+- 回答用户关于场景的问题
+- 基于照片内容提供更多背景信息
+
+回答要简短、自然，多用"唔"、"啊"、"其实"、"当时"等口语化表达，就像和朋友聊天一样。`;
 
             try {
                 // 构建请求的 parts 数组
@@ -618,30 +628,67 @@
                 // 等待模型加载完成
                 loader.innerText = '✨ 等待模型加载...';
                 try {
-                    await state.splatMesh.loaded;
+                    // 检查 loaded 是否是 Promise
+                    if (state.splatMesh.loaded && typeof state.splatMesh.loaded.then === 'function') {
+                        await state.splatMesh.loaded;
+                    } else {
+                        // 如果不是 Promise，使用轮询方式等待加载
+                        await new Promise((resolve, reject) => {
+                            const checkLoaded = () => {
+                                if (state.splatMesh.geometry || state.splatMesh.loaded === true) {
+                                    resolve();
+                                } else if (state.splatMesh.loaded === false) {
+                                    reject(new Error('模型加载失败'));
+                                } else {
+                                    setTimeout(checkLoaded, 100);
+                                }
+                            };
+                            // 设置超时
+                            setTimeout(() => {
+                                if (!state.splatMesh.geometry && state.splatMesh.loaded !== true) {
+                                    reject(new Error('模型加载超时'));
+                                }
+                            }, 30000);
+                            checkLoaded();
+                        });
+                    }
                     loader.innerText = '✨ 模型加载完成！';
+                    console.log('模型加载成功，开始渲染');
                 } catch (e) {
                     console.error('模型加载失败:', e);
-                    loader.innerText = '❌ 模型加载失败';
-                    throw e;
+                    loader.innerText = '❌ 模型加载失败: ' + (e.message || e);
+                    // 不抛出错误，让用户看到错误信息
+                    return;
                 }
                 
                 // 设置视觉效果
                 setupSplatModifier(state.splatMesh, state.effectParams.effect);
                 
                 // 居中模型
+                console.log('开始居中模型...');
                 const box = new THREE.Box3().setFromObject(state.splatMesh);
-                const center = box.getCenter(new THREE.Vector3());
-                state.splatMesh.position.sub(center);
-                // 保存模型中心点（用于相机看向和旋转）
-                state.modelCenter = new THREE.Vector3(0, 0, 0);
+                console.log('模型边界框:', box, '是否为空:', box.isEmpty());
+                
+                if (box.isEmpty()) {
+                    console.warn('模型边界框为空，使用默认位置');
+                    state.modelCenter = new THREE.Vector3(0, 0, 0);
+                    state.camera.position.set(0, 0, 5);
+                    state.camera.lookAt(state.modelCenter);
+                } else {
+                    const center = box.getCenter(new THREE.Vector3());
+                    state.splatMesh.position.sub(center);
+                    console.log('模型已居中，中心点:', center);
+                    // 保存模型中心点（用于相机看向和旋转）
+                    state.modelCenter = new THREE.Vector3(0, 0, 0);
 
-                // 调整相机位置
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                const cameraDistance = maxDim * 2.5;
-                state.camera.position.set(0, maxDim * 0.5, cameraDistance);
-                state.camera.lookAt(state.modelCenter);
+                    // 调整相机位置
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const cameraDistance = maxDim * 2.5;
+                    state.camera.position.set(0, maxDim * 0.5, cameraDistance);
+                    state.camera.lookAt(state.modelCenter);
+                    console.log('相机位置:', state.camera.position, '距离:', cameraDistance);
+                }
                 
                 // 重置旋转状态
                 state.rotationAngle = 0;
@@ -650,6 +697,12 @@
                 // 隐藏加载提示
                 loader.style.display = 'none';
                 loader.style.pointerEvents = 'none';
+
+                // 确保场景中有内容
+                console.log('场景对象数量:', state.scene.children.length);
+                console.log('SplatMesh:', state.splatMesh);
+                console.log('相机位置:', state.camera.position);
+                console.log('相机朝向:', state.camera.rotation);
 
                 // 渲染循环
                 state.lastTime = performance.now();
