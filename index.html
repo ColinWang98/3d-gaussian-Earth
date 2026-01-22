@@ -622,8 +622,8 @@
                     const size = box.getSize(new THREE.Vector3());
                 const maxDim = Math.max(size.x, size.y, size.z);
                 state.camera.position.set(0, 0, maxDim * 2);
-                state.controls.target.copy(center);
-                state.controls.update();
+                // SparkControls 没有 target 属性，直接使用 camera.lookAt
+                state.camera.lookAt(center);
 
                 // 隐藏加载提示
                 loader.style.display = 'none';
