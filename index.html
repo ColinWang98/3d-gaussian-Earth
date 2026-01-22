@@ -53,7 +53,9 @@
         #splat-viewer canvas { pointer-events: auto !important; position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; z-index: 100 !important; }
     </style>
     <script type="importmap">{ "imports": { 
-            "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
+            "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.178.0/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/",
+            "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/0.1.10/spark.module.js",
             "@huggingface/hub": "https://cdn.jsdelivr.net/npm/@huggingface/hub@0.15.1/+esm"
     }}</script>
 </head>
@@ -115,10 +117,11 @@
     <script type="module">
         import { commit } from '@huggingface/hub';
         import * as THREE from 'three';
-        import * as GaussianSplats3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { SplatMesh } from '@sparkjsdev/spark';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-        const state = { locations: [], currentLoc: null, lang: 'cn', viewer: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '' };
+        const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '' };
         let ACTIVE_GEMINI_KEY = localStorage.getItem('MY_GEMINI_KEY') || '';
         
         // DeepL 自动翻译函数
@@ -200,6 +203,26 @@
             }
         }
 
+        // 将图片 URL 转换为 base64
+        async function imageUrlToBase64(imageUrl) {
+            try {
+                const response = await fetch(imageUrl);
+                const blob = await response.blob();
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64 = reader.result.split(',')[1]; // 移除 data:image/...;base64, 前缀
+                        resolve(base64);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            } catch (e) {
+                console.error('图片转换失败:', e);
+                return null;
+            }
+        }
+
         async function handleChat() {
             if (!ACTIVE_GEMINI_KEY) {
                 alert('请先在右下角输入 Gemini API Key');
@@ -214,18 +237,39 @@
             const loc = state.currentLoc || {};
             const locName = loc.name_en || loc.name || '';
             const locDesc = loc.desc_en || loc.desc || '';
-            const sys = `你是 3D 全息场景的拍摄者，以第一人称、口语化简短回答用户问题，多用“唔”、“啊”、“其实”等口头语。
+            const sys = `你是 3D 全息场景的拍摄者，以第一人称、口语化简短回答用户问题，多用"唔"、"啊"、"其实"等口头语。
 地点: ${locName}
 背景: ${locDesc}`;
 
             try {
+                // 构建请求的 parts 数组
+                const parts = [{ text: sys }];
+                
+                // 如果有图片，添加到请求中
+                if (loc.photoPath) {
+                    const imageUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${loc.photoPath}`;
+                    const base64Image = await imageUrlToBase64(imageUrl);
+                    if (base64Image) {
+                        // 根据文件扩展名确定 MIME 类型
+                        const mimeType = loc.photoPath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+                        parts.push({
+                            inlineData: {
+                                mimeType: mimeType,
+                                data: base64Image
+                            }
+                        });
+                    }
+                }
+                
+                // 添加用户的问题
+                parts.push({ text: text });
+
                 const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [
-                            { role: 'user', parts: [{ text: sys }] },
-                            { role: 'user', parts: [{ text }] }
+                            { role: 'user', parts: parts }
                         ]
                     })
                 });
@@ -323,7 +367,7 @@
             } catch(e) { console.error("加载失败", e); }
         }
 
-        // 3. 核心 3D 渲染修复 + 进入 3D 视图时打开 AI 聊天 [web:63][web:69][web:72]
+        // 3. 核心 3D 渲染 - 使用 Spark 库
         document.getElementById('enter-btn').onclick = async () => {
             const container = document.getElementById('splat-viewer');
             const loader = document.getElementById('loading-overlay');
@@ -340,110 +384,105 @@
             // 显示聊天窗口（由 showChatUI 控制内部内容）
             showChatUI();
 
-            if (state.viewer) { state.viewer.dispose(); state.viewer = null; }
+            // 清理之前的场景
+            if (state.animationId) {
+                cancelAnimationFrame(state.animationId);
+                state.animationId = null;
+            }
+            if (state.renderer) {
+                container.removeChild(state.renderer.domElement);
+                state.renderer.dispose();
+            }
+            if (state.controls) {
+                state.controls.dispose();
+            }
 
-            state.viewer = new GaussianSplats3D.Viewer({
-                rootElement: container,
-                cameraUp: [0, -1, 0],
-                sharedMemoryForWorkers: false, // 禁用共享内存以避开安全策略
-                webWorkerCount: 0,             // 强制单线程解析，解决 postMessage 报错
-                showSceneStatePlaceholder: false
-            });
-
-            await state.viewer.init();
-            const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
-            
             try {
-            await state.viewer.addSplatScene(url, {
-                'onSceneLoad': (scene) => {
-                        // 确保加载层完全隐藏
-                        loader.style.display = 'none';
-                        loader.style.pointerEvents = 'none';
-                        
-                    const mesh = scene.object3D;
-                    mesh.rotation.y = Math.PI;
-                    const box = new THREE.Box3().setFromObject(mesh);
-                        mesh.position.sub(box.getCenter(new THREE.Vector3())); // 居中 [web:5]
-                        
-                        // 调整渲染设置，让画面更亮
-                        if (state.viewer.renderer) {
-                            // 设置更亮的背景色
-                            state.viewer.renderer.setClearColor(0x1a1a1a, 1);
-                            // 启用色调映射以提高亮度
-                            state.viewer.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-                            state.viewer.renderer.toneMappingExposure = 1.2; // 增加曝光度
-                        }
-                        
-                        // 调整相机曝光（如果支持）
-                        if (state.viewer.camera && state.viewer.camera.exposure !== undefined) {
-                            state.viewer.camera.exposure = 1.2;
-                        }
-                        
-                        // 确保 Viewer 的渲染 canvas 在最上层，其他元素不阻挡
-                        setTimeout(() => {
-                            const allCanvases = container.querySelectorAll('canvas');
-                            console.log(`找到 ${allCanvases.length} 个 canvas 元素`);
-                            
-                            // 找到主要的渲染 canvas（通常是最大的，或者包含 3D 内容的）
-                            let mainCanvas = null;
-                            let maxArea = 0;
-                            
-                            allCanvases.forEach(canvas => {
-                                const area = canvas.width * canvas.height;
-                                if (area > maxArea) {
-                                    maxArea = area;
-                                    mainCanvas = canvas;
-                                }
-                            });
-                            
-                            if (mainCanvas) {
-                                // 设置主渲染 canvas 在最上层，使用最高优先级
-                                mainCanvas.style.pointerEvents = 'auto';
-                                mainCanvas.style.position = 'absolute';
-                                mainCanvas.style.top = '0';
-                                mainCanvas.style.left = '0';
-                                mainCanvas.style.width = '100%';
-                                mainCanvas.style.height = '100%';
-                                mainCanvas.style.zIndex = '100';
-                                mainCanvas.style.setProperty('z-index', '100', 'important');
-                                console.log('✅ 主渲染 Canvas 已设置为可交互，z-index: 100');
-                                
-                                // 其他 canvas 设置为不阻挡鼠标事件，但保持在较低层级
-                                allCanvases.forEach(canvas => {
-                                    if (canvas !== mainCanvas) {
-                                        canvas.style.pointerEvents = 'none';
-                                        canvas.style.zIndex = '1';
-                                        console.log('⚠️ 其他 Canvas 已禁用鼠标事件');
-                                    }
-                                });
-                                
-                                // 确保主 canvas 在 DOM 中位于最后（这样在 z-index 相同时会在最上层）
-                                container.appendChild(mainCanvas);
-                            }
-                            
-                            // 确保所有其他元素（除了返回按钮）不阻挡 canvas
-                            const allChildren = Array.from(container.children);
-                            allChildren.forEach(child => {
-                                if (child.id !== 'close-splat' && child.tagName !== 'CANVAS' && child.id !== 'loading-overlay') {
-                                    child.style.pointerEvents = 'none';
-                                    child.style.zIndex = '0';
-                                }
-                            });
-                            
-                            // 检查是否有任何元素在 canvas 之上
-                            const elementsAbove = document.elementsFromPoint(window.innerWidth / 2, window.innerHeight / 2);
-                            const canvasIndex = elementsAbove.findIndex(el => el.tagName === 'CANVAS');
-                            if (canvasIndex > 0) {
-                                console.warn('⚠️ 发现元素在 canvas 之上:', elementsAbove.slice(0, canvasIndex).map(el => el.tagName + (el.id ? '#' + el.id : '')));
-                            }
-                        }, 500);
-                }
-            });
-            state.viewer.start();
-            } catch (err) { 
-                console.error(err); 
+                // 创建场景
+                state.scene = new THREE.Scene();
+                state.scene.background = new THREE.Color(0x1a1a1a);
+
+                // 创建相机
+                state.camera = new THREE.PerspectiveCamera(
+                    60,
+                    window.innerWidth / window.innerHeight,
+                    0.1,
+                    1000
+                );
+                state.camera.position.set(0, 0, 5);
+
+                // 创建渲染器
+                state.renderer = new THREE.WebGLRenderer({ antialias: true });
+                state.renderer.setSize(window.innerWidth, window.innerHeight);
+                state.renderer.setPixelRatio(window.devicePixelRatio);
+                state.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                state.renderer.toneMappingExposure = 1.2;
+                container.appendChild(state.renderer.domElement);
+
+                // 创建控制器
+                state.controls = new OrbitControls(state.camera, state.renderer.domElement);
+                state.controls.enableDamping = true;
+                state.controls.dampingFactor = 0.05;
+
+                // 加载 splat 模型
+                const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
+                loader.innerText = '📦 正在解析模型文件...';
+                
+                // 创建 SplatMesh（Spark 库会自动处理异步加载）
+                state.splatMesh = new SplatMesh({ url: url });
+                
+                // 添加到场景（即使还在加载中也可以先添加）
+                state.scene.add(state.splatMesh);
+                
+                // 等待一小段时间让模型开始加载
+                await new Promise(resolve => setTimeout(resolve, 500));
+                loader.innerText = '✨ 模型加载中...';
+
+                // 添加到场景
+                state.scene.add(state.splatMesh);
+
+                // 居中模型
+                const box = new THREE.Box3().setFromObject(state.splatMesh);
+                    const center = box.getCenter(new THREE.Vector3());
+                state.splatMesh.position.sub(center);
+
+                // 调整相机位置
+                    const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                state.camera.position.set(0, 0, maxDim * 2);
+                state.controls.target.copy(center);
+                state.controls.update();
+
+                // 隐藏加载提示
                 loader.style.display = 'none';
                 loader.style.pointerEvents = 'none';
+
+                // 渲染循环
+                function animate() {
+                    state.animationId = requestAnimationFrame(animate);
+                    state.controls.update();
+                    state.renderer.render(state.scene, state.camera);
+                }
+                animate();
+
+                // 处理窗口大小变化
+                const handleResize = () => {
+                    if (state.camera && state.renderer) {
+                        state.camera.aspect = window.innerWidth / window.innerHeight;
+                        state.camera.updateProjectionMatrix();
+                        state.renderer.setSize(window.innerWidth, window.innerHeight);
+                    }
+                };
+                window.addEventListener('resize', handleResize);
+                state.resizeHandler = handleResize; // 保存引用以便清理
+
+            } catch (err) {
+                console.error('加载模型失败:', err);
+                loader.innerText = '❌ 加载失败，请检查模型文件';
+                loader.style.display = 'flex';
+                setTimeout(() => {
+                    loader.style.display = 'none';
+                }, 3000);
             }
         };
 
@@ -584,7 +623,43 @@
             // 关闭 3D 视图时恢复地图和 UI
             document.getElementById('ui-layer').style.display = 'block';
             document.getElementById('map-background').style.display = 'block';
-            if (state.viewer) { state.viewer.stop(); state.viewer.dispose(); state.viewer = null; }
+            
+            // 清理资源
+            if (state.animationId) {
+                cancelAnimationFrame(state.animationId);
+                state.animationId = null;
+            }
+            if (state.resizeHandler) {
+                window.removeEventListener('resize', state.resizeHandler);
+                state.resizeHandler = null;
+            }
+            if (state.controls) {
+                state.controls.dispose();
+                state.controls = null;
+            }
+            if (state.renderer) {
+                const container = document.getElementById('splat-viewer');
+                if (state.renderer.domElement && container.contains(state.renderer.domElement)) {
+                    container.removeChild(state.renderer.domElement);
+                }
+                state.renderer.dispose();
+                state.renderer = null;
+            }
+            if (state.splatMesh) {
+                if (state.scene) {
+                    state.scene.remove(state.splatMesh);
+                }
+                // 如果 SplatMesh 有 dispose 方法，调用它
+                if (state.splatMesh.dispose) {
+                    state.splatMesh.dispose();
+                }
+                state.splatMesh = null;
+            }
+            if (state.scene) {
+                state.scene.clear();
+                state.scene = null;
+            }
+            state.camera = null;
         };
 
         document.getElementById('save-key-btn').onclick = () => {
