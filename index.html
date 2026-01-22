@@ -394,6 +394,7 @@
 
         // 设置 Splat 视觉效果
         function setupSplatModifier(splatMesh, effectType) {
+            console.log('setupSplatModifier 调用，effectType:', effectType, 'animateT 存在:', !!state.animateT);
             if (effectType === 'None') {
                 splatMesh.objectModifier = null;
                 splatMesh.updateGenerator();
@@ -526,6 +527,12 @@
                         `),
                     });
 
+                    // 确保 animateT 已初始化
+                    if (!state.animateT) {
+                        console.warn('animateT 未初始化，跳过效果');
+                        return { gsplat };
+                    }
+                    
                     gsplat = d.apply({ 
                         gsplat, 
                         t: state.animateT,
@@ -631,35 +638,48 @@
                 state.baseTime = 0;
                 
                 // 设置视觉效果（必须在 animateT 初始化后）
+                console.log('设置视觉效果，effectType:', state.effectParams.effect, 'animateT:', state.animateT);
                 setupSplatModifier(state.splatMesh, state.effectParams.effect);
+                console.log('视觉效果设置完成');
                 
                 // 居中模型并修复倒置问题
+                console.log('开始居中模型...');
+                
+                // 先修复上下颠倒：绕X轴旋转180度
+                state.splatMesh.rotation.x = Math.PI;
+                
+                // 计算边界框（考虑旋转后）
                 const box = new THREE.Box3().setFromObject(state.splatMesh);
-                const center = box.getCenter(new THREE.Vector3());
+                console.log('模型边界框:', box.min, box.max);
                 
-                // 将模型移动到原点（居中）
-                state.splatMesh.position.sub(center);
-                
-                // 修复倒置：尝试不同的旋转方式
-                // 如果模型倒置，可以尝试：
-                // 1. 绕X轴旋转180度
-                // 2. 绕Y轴旋转180度
-                // 3. 或者组合旋转
-                // 先尝试绕Y轴旋转180度（更常见的情况）
-                state.splatMesh.rotation.y = Math.PI;
-                
-                // 保存模型中心点（用于相机看向和旋转）
-                state.modelCenter = new THREE.Vector3(0, 0, 0);
-                
-                // 重新计算边界框（考虑旋转后）
-                const box2 = new THREE.Box3().setFromObject(state.splatMesh);
-                const size = box2.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                
-                // 调整相机位置，确保模型在视野中心
-                const cameraDistance = maxDim * 2.5;
-                state.camera.position.set(0, 0, cameraDistance);
-                state.camera.lookAt(state.modelCenter);
+                if (box.isEmpty()) {
+                    console.warn('边界框为空，使用默认位置');
+                    state.modelCenter = new THREE.Vector3(0, 0, 0);
+                    state.camera.position.set(0, 0, 5);
+                    state.camera.lookAt(state.modelCenter);
+                } else {
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    console.log('模型中心:', center, '尺寸:', size);
+                    
+                    // 将模型移动到原点（居中）
+                    state.splatMesh.position.sub(center);
+                    
+                    // 保存模型中心点（用于相机看向和旋转）
+                    state.modelCenter = new THREE.Vector3(0, 0, 0);
+                    
+                    // 重新计算边界框确认居中
+                    const box2 = new THREE.Box3().setFromObject(state.splatMesh);
+                    const center2 = box2.getCenter(new THREE.Vector3());
+                    console.log('居中后的中心:', center2);
+                    
+                    // 调整相机位置，确保模型在视野中心
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const cameraDistance = maxDim * 2.5;
+                    state.camera.position.set(0, 0, cameraDistance);
+                    state.camera.lookAt(state.modelCenter);
+                    console.log('相机位置:', state.camera.position, '距离:', cameraDistance);
+                }
                 
                 // 重置旋转状态
                 state.rotationAngle = 0;
