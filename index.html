@@ -18,13 +18,14 @@
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
         #splat-viewer { position: absolute; inset: 0; background: transparent; z-index: 9999; display: none; }
         /* 确保 splat-viewer 本身不阻挡鼠标事件，只有子元素可以交互
-           允许返回按钮、效果控制面板、旋转按钮和聊天窗口接收鼠标事件 */
-        #splat-viewer > *:not(canvas):not(#close-splat):not(#chat-window):not(#effect-controls):not(#rotate-toggle) { pointer-events: none; }
+           允许返回按钮、效果控制面板、旋转按钮、语言切换按钮和聊天窗口接收鼠标事件 */
+        #splat-viewer > *:not(canvas):not(#close-splat):not(#chat-window):not(#effect-controls):not(#rotate-toggle):not(#view-lang-toggle) { pointer-events: none; }
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; }
         #effect-controls { position: absolute; top: 20px; left: 200px; z-index: 2100; background: var(--glass); border-radius: 15px; border: 1px solid #333; padding: 15px; min-width: 200px; pointer-events: auto; display: none; }
         #effect-controls label { color: white; font-size: 0.9em; display: block; margin-bottom: 8px; }
         #effect-select { width: 100%; padding: 8px; background: #050510; border: 1px solid #444; color: white; border-radius: 8px; cursor: pointer; }
         #rotate-toggle { position: absolute; top: 20px; left: 420px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; display: none; }
+        #view-lang-toggle { position: absolute; top: 20px; right: 360px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; display: none; }
         /* 为了确保 3D 画布可交互，聊天窗口不拦截鼠标事件 */
         #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: none; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
         #chat-msgs { flex: 1; padding: 12px; overflow-y: auto; font-size: 0.85em; color: #eee; display: flex; flex-direction: column; gap: 10px; }
@@ -80,6 +81,7 @@
             </select>
         </div>
         <button id="rotate-toggle">⏸️ 暂停旋转</button>
+        <button id="view-lang-toggle">EN / 中</button>
         <div id="chat-window">
             <div id="gemini-config-ui" style="padding:20px; text-align:center;">
                 <p style="color:var(--primary); font-size:0.9em;">👤 激活 AI 导览员</p>
@@ -398,7 +400,18 @@
             if (effectType === 'None') {
                 splatMesh.objectModifier = null;
                 splatMesh.updateGenerator();
+                console.log('效果已清除');
                 return;
+            }
+            
+            // 确保 animateT 已初始化
+            if (!state.animateT) {
+                console.warn('animateT 未初始化，无法应用效果，尝试初始化');
+                state.animateT = dyno.dynoFloat(0);
+                if (!state.animateT) {
+                    console.error('无法初始化 animateT');
+                    return;
+                }
             }
 
             const effectTypeMap = {
@@ -578,6 +591,13 @@
             if (rotateToggle) {
                 rotateToggle.style.display = 'block';
                 rotateToggle.innerText = state.isRotating ? '⏸️ 暂停旋转' : '▶️ 继续旋转';
+            }
+            
+            // 显示语言切换按钮
+            const viewLangToggle = document.getElementById('view-lang-toggle');
+            if (viewLangToggle) {
+                viewLangToggle.style.display = 'block';
+                viewLangToggle.innerText = state.lang === 'cn' ? 'EN / 中' : '中 / EN';
             }
 
             // 清理之前的场景
@@ -974,8 +994,20 @@
         document.getElementById('effect-select').addEventListener('change', (e) => {
             const effect = e.target.value;
             state.effectParams.effect = effect;
+            console.log('切换视觉效果:', effect);
             if (state.splatMesh) {
+                // 确保 animateT 已初始化
+                if (!state.animateT) {
+                    console.warn('切换效果时 animateT 未初始化，重新初始化');
+                    state.animateT = dyno.dynoFloat(0);
+                }
                 setupSplatModifier(state.splatMesh, effect);
+                // 强制更新渲染
+                if (state.splatMesh.updateVersion) {
+                    state.splatMesh.updateVersion();
+                }
+            } else {
+                console.warn('切换效果时 splatMesh 不存在');
             }
         });
 
@@ -985,6 +1017,56 @@
             const rotateToggle = document.getElementById('rotate-toggle');
             if (rotateToggle) {
                 rotateToggle.innerText = state.isRotating ? '⏸️ 暂停旋转' : '▶️ 继续旋转';
+            }
+        });
+
+        // 3D视图语言切换按钮
+        document.getElementById('view-lang-toggle').addEventListener('click', () => {
+            state.lang = state.lang === 'cn' ? 'en' : 'cn';
+            updateLangUI();
+            // 更新按钮文本
+            const viewLangToggle = document.getElementById('view-lang-toggle');
+            if (viewLangToggle) {
+                viewLangToggle.innerText = state.lang === 'cn' ? 'EN / 中' : '中 / EN';
+            }
+            // 更新效果选择器的标签
+            const effectLabel = document.querySelector('#effect-controls label');
+            if (effectLabel) {
+                effectLabel.innerText = state.lang === 'cn' ? '✨ 视觉效果：' : '✨ Visual Effects:';
+            }
+            // 更新效果选项文本
+            const effectSelect = document.getElementById('effect-select');
+            if (effectSelect) {
+                const options = effectSelect.options;
+                if (state.lang === 'cn') {
+                    options[0].text = '无效果';
+                    options[1].text = '魔法';
+                    options[2].text = '扩散';
+                    options[3].text = '展开';
+                    options[4].text = '龙卷风';
+                    options[5].text = '雨';
+                } else {
+                    options[0].text = 'None';
+                    options[1].text = 'Magic';
+                    options[2].text = 'Spread';
+                    options[3].text = 'Unroll';
+                    options[4].text = 'Twister';
+                    options[5].text = 'Rain';
+                }
+            }
+            // 更新旋转按钮文本
+            const rotateToggle = document.getElementById('rotate-toggle');
+            if (rotateToggle) {
+                if (state.lang === 'cn') {
+                    rotateToggle.innerText = state.isRotating ? '⏸️ 暂停旋转' : '▶️ 继续旋转';
+                } else {
+                    rotateToggle.innerText = state.isRotating ? '⏸️ Pause Rotation' : '▶️ Resume Rotation';
+                }
+            }
+            // 更新返回按钮文本
+            const closeSplat = document.getElementById('close-splat');
+            if (closeSplat) {
+                closeSplat.innerText = state.lang === 'cn' ? '← 返回地图' : '← Back to Map';
             }
         });
 
