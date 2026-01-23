@@ -24,6 +24,9 @@
         #effect-controls { position: absolute; top: 20px; left: 200px; z-index: 2100; background: var(--glass); border-radius: 15px; border: 1px solid #333; padding: 15px; min-width: 200px; pointer-events: auto; display: none; }
         #effect-controls label { color: white; font-size: 0.9em; display: block; margin-bottom: 8px; }
         #effect-select { width: 100%; padding: 8px; background: #050510; border: 1px solid #444; color: white; border-radius: 8px; cursor: pointer; margin-bottom: 10px; }
+        #intensity-control { margin-bottom: 10px; }
+        #intensity-control label { display: block; margin-bottom: 5px; }
+        #intensity-slider { width: 100%; }
         #reset-time-btn { width: 100%; padding: 8px; background: var(--accent); border: 1px solid #444; color: white; border-radius: 8px; cursor: pointer; font-size: 0.85em; }
         #rotate-toggle { position: absolute; top: 20px; left: 420px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; display: none; }
         #view-lang-toggle { position: absolute; top: 20px; right: 360px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; display: none; }
@@ -74,12 +77,25 @@
             <label for="effect-select">✨ 视觉效果：</label>
             <select id="effect-select">
                 <option value="None">无效果</option>
-                <option value="Magic">魔法</option>
-                <option value="Spread">扩散</option>
-                <option value="Unroll">展开</option>
-                <option value="Twister">龙卷风</option>
-                <option value="Rain">雨</option>
+                <optgroup label="Reveal Effects">
+                    <option value="Magic">魔法</option>
+                    <option value="Spread">扩散</option>
+                    <option value="Unroll">展开</option>
+                    <option value="Twister">龙卷风</option>
+                    <option value="Rain">雨</option>
+                </optgroup>
+                <optgroup label="Shader Effects">
+                    <option value="Electronic">电子</option>
+                    <option value="Deep Meditation">深度冥想</option>
+                    <option value="Waves">波浪</option>
+                    <option value="Flare">闪光</option>
+                    <option value="Disintegrate">分解</option>
+                </optgroup>
             </select>
+            <div id="intensity-control" style="display: none;">
+                <label for="intensity-slider">强度: <span id="intensity-value">0.8</span></label>
+                <input type="range" id="intensity-slider" min="0" max="1" step="0.01" value="0.8">
+            </div>
             <button id="reset-time-btn">🔄 重置时间</button>
         </div>
         <button id="rotate-toggle">⏸️ 暂停旋转</button>
@@ -140,7 +156,7 @@
         import { SparkControls, SplatMesh, dyno } from '@sparkjsdev/spark';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-        const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None' }, animateT: null, baseTime: 0, effectStartTime: 0, isRotating: true, rotationAngle: 0, rotationSpeed: 0.3, modelCenter: null };
+        const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None', intensity: 0.8 }, animateT: null, baseTime: 0, effectStartTime: 0, isRotating: true, rotationAngle: 0, rotationSpeed: 0.3, modelCenter: null };
         let ACTIVE_GEMINI_KEY = localStorage.getItem('MY_GEMINI_KEY') || '';
         
         // DeepL 自动翻译函数
@@ -416,12 +432,26 @@
                 }
             }
 
-            const effectTypeMap = {
+            // Reveal effects 使用 1-5，Shader effects 使用 10-14
+            const revealEffectMap = {
                 'Magic': 1,
                 'Spread': 2,
                 'Unroll': 3,
                 'Twister': 4,
                 'Rain': 5
+            };
+            
+            const shaderEffectMap = {
+                'Electronic': 10,
+                'Deep Meditation': 11,
+                'Waves': 12,
+                'Flare': 13,
+                'Disintegrate': 14
+            };
+            
+            const effectTypeMap = {
+                ...revealEffectMap,
+                ...shaderEffectMap
             };
 
             const effectInt = effectTypeMap[effectType] || 1;
@@ -431,14 +461,12 @@
                 { gsplat: dyno.Gsplat },
                 ({ gsplat }) => {
                     const d = new dyno.Dyno({
-                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int" },
+                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int", intensity: "float" },
                         outTypes: { gsplat: dyno.Gsplat },
                         globals: () => [
                             dyno.unindent(`
                                 vec3 hash(vec3 p) {
-                                    p = fract(p * 0.3183099 + 0.1);
-                                    p *= 17.0;
-                                    return fract(vec3(p.x * p.y * p.z, p.x + p.y * p.z, p.x * p.y + p.z));
+                                    return fract(sin(p*123.456)*123.456);
                                 }
 
                                 vec3 noise(vec3 p) {
@@ -490,13 +518,89 @@
                                     pos.xz *= rot(t*.3);
                                     return vec4(pos, smoothstep(-10., y, pos.y));
                                 }
+
+                                vec3 headMovement(vec3 pos, float t) {
+                                    pos.xy *= rot(smoothstep(-1., -2., pos.y) * .2 * sin(t*2.));
+                                    return pos;
+                                }
+
+                                vec3 breathAnimation(vec3 pos, float t) {
+                                    float b = sin(t*1.5);
+                                    pos.yz *= rot(smoothstep(-1., -3., pos.y) * .15 * -b);
+                                    pos.z += .3;
+                                    pos.y += 1.2;
+                                    pos *= 1. + exp(-3. * length(pos)) * b;
+                                    pos.z -= .3;
+                                    pos.y -= 1.2;
+                                    return pos;
+                                }
+
+                                vec4 fractal1(vec3 pos, float t, float intensity) {
+                                    float m = 100.;
+                                    vec3 p = pos * .1;
+                                    p.y += .5;
+                                    for (int i = 0; i < 8; i++) {
+                                        p = abs(p) / clamp(abs(p.x * p.y), 0.3, 3.) - 1.;
+                                        p.xy *= rot(radians(90.));
+                                        if (i > 1) m = min(m, length(p.xy) + step(.3, fract(p.z * .5 + t * .5 + float(i) * .2)));
+                                    }
+                                    m = step(m, 0.5) * 1.3 * intensity;
+                                    return vec4(-pos.y * .3, 0.5, 0.7, .3) * intensity + m;
+                                }
+
+                                vec4 fractal2(vec3 center, vec3 scales, vec4 rgba, float t, float intensity) {
+                                    vec3 pos = center;
+                                    float splatSize = length(scales);
+                                    float pattern = exp(-50. * splatSize);
+                                    vec3 p = pos * .65;
+                                    pos.y += 2.;
+                                    float c = 0.;
+                                    float l, l2 = length(p);
+                                    float m = 100.;
+                                    
+                                    for (int i = 0; i < 10; i++) {
+                                        p.xyz = abs(p.xyz) / dot(p.xyz, p.xyz) - .8;
+                                        l = length(p.xyz);
+                                        c += exp(-1. * abs(l - l2) * (1. + sin(t * 1.5 + pos.y)));
+                                        l2 = length(p.xyz);
+                                        m = min(m, length(p.xyz));
+                                    }
+                                    
+                                    c = smoothstep(0.3, 0.5, m + sin(t * 1.5 + pos.y * .5)) + c * .1;              
+                                    return vec4(vec3(length(rgba.rgb)) * vec3(c, c*c, c*c*c) * intensity, 
+                                              rgba.a * exp(-20. * splatSize) * m * intensity);
+                                }
+
+                                vec4 sin3D(vec3 p, float t) {
+                                    float m = exp(-2. * length(sin(p * 5. + t * 3.))) * 5.;
+                                    return vec4(m) + .3;
+                                }
+
+                                vec4 disintegrate(vec3 pos, float t, float intensity) {
+                                    vec3 p = pos + (hash(pos) * 2. - 1.) * intensity;
+                                    float tt = smoothstep(-1., 0.5, -sin(t + -pos.y * .5));  
+                                    p.xz *= rot(tt * 2. + p.y * 2. * tt);
+                                    return vec4(mix(p, pos, tt), tt);
+                                }
+                                
+                                vec4 flare(vec3 pos, float t) {
+                                    vec3 p = vec3(0., -1.5, 0.);
+                                    float tt = smoothstep(-1., .5, sin(t + hash(pos).x));  
+                                    tt = tt * tt;              
+                                    p.x += sin(t * 2.) * tt;
+                                    p.z += sin(t * 2.) * tt;
+                                    p.y += sin(t) * tt;
+                                    return vec4(mix(pos, p, tt), tt);
+                                }
                             `)
                         ],
                         statements: ({ inputs, outputs }) => dyno.unindentLines(`
                             ${outputs.gsplat} = ${inputs.gsplat};
-                            float t = ${inputs.t};
-                            vec3 scales = ${inputs.gsplat}.scales;
+                            
                             vec3 localPos = ${inputs.gsplat}.center;
+                            vec3 splatScales = ${inputs.gsplat}.scales;
+                            vec4 splatColor = ${inputs.gsplat}.rgba;
+                            float t = ${inputs.t};
                             float l = length(localPos.xz);
                             int effectType = int(${inputs.effectType});
                             
@@ -505,12 +609,13 @@
                                 float s = smoothstep(0.,10.,t-4.5)*10.;
                                 float border = abs(s-l-.5);
                                 localPos *= 1.-.2*exp(-20.*border);
-                                vec3 finalScales = mix(scales,vec3(0.002),smoothstep(s-.5,s,l+.5));
-                                ${outputs.gsplat}.center = localPos + .1*noise(localPos.xyz*2.+t*.5)*smoothstep(s-.5,s,l+.5);
+                                vec3 finalScales = mix(splatScales,vec3(0.002),smoothstep(s-.5,s,l+.5));
+                                ${outputs.gsplat}.center = localPos + .1*noise(localPos.xyz*2.+vec3(t*.5))*smoothstep(s-.5,s,l+.5);
                                 ${outputs.gsplat}.scales = finalScales;
                                 float at = atan(localPos.x,localPos.z)/3.1416;
                                 ${outputs.gsplat}.rgba *= step(at,t-3.1416);
-                                ${outputs.gsplat}.rgba += exp(-20.*border) + exp(-50.*abs(t-at-3.1416))*.5;
+                                float glow = exp(-20.*border) + exp(-50.*abs(t-at-3.1416))*.5;
+                                ${outputs.gsplat}.rgba += vec4(glow, glow, glow, 0.0);
                                 // 确保效果可见：如果时间太短，强制显示部分内容
                                 if (t < 5.0) {
                                     ${outputs.gsplat}.rgba.a = max(${outputs.gsplat}.rgba.a, 0.3);
@@ -521,32 +626,68 @@
                                 float tt = t*t*.4+.5;
                                 localPos.xz *= min(1.,.3+max(0.,tt*.05));
                                 ${outputs.gsplat}.center = localPos;
-                                ${outputs.gsplat}.scales = max(mix(vec3(0.0),scales,min(tt-7.-l*2.5,1.)),mix(vec3(0.0),scales*.2,min(tt-1.-l*2.,1.)));
-                                ${outputs.gsplat}.rgba = mix(vec4(.3),${inputs.gsplat}.rgba,clamp(tt-l*2.5-3.,0.,1.));
+                                ${outputs.gsplat}.scales = max(mix(vec3(0.0),splatScales,min(tt-7.-l*2.5,1.)),mix(vec3(0.0),splatScales*.2,min(tt-1.-l*2.,1.)));
+                                ${outputs.gsplat}.rgba = mix(vec4(0.3, 0.3, 0.3, 1.0),splatColor,clamp(tt-l*2.5-3.,0.,1.));
                                 
                             } else if (effectType == 3) {
                                 // Unroll Effect: 更明显的展开效果
                                 localPos.xz *= rot((localPos.y*50.-20.)*exp(-t));
                                 ${outputs.gsplat}.center = localPos * (1.-exp(-t)*2.);
-                                ${outputs.gsplat}.scales = mix(vec3(0.002),scales,smoothstep(.3,.7,t+localPos.y-2.));
-                                ${outputs.gsplat}.rgba = ${inputs.gsplat}.rgba*step(0.,t*.5+localPos.y-.5);
+                                ${outputs.gsplat}.scales = mix(vec3(0.002),splatScales,smoothstep(.3,.7,t+localPos.y-2.));
+                                ${outputs.gsplat}.rgba = splatColor*step(0.,t*.5+localPos.y-.5);
                             } else if (effectType == 4) {
                                 // Twister Effect: 龙卷风效果
-                                vec4 effectResult = twister(localPos, scales, t);
+                                vec4 effectResult = twister(localPos, splatScales, t);
                                 ${outputs.gsplat}.center = effectResult.xyz;
-                                ${outputs.gsplat}.scales = mix(vec3(.002), scales, pow(effectResult.w, 12.));
+                                ${outputs.gsplat}.scales = mix(vec3(.002), splatScales, pow(effectResult.w, 12.));
                                 float s = effectResult.w;
                                 float spin = -t * 0.3 * (1.0 - s);
                                 vec4 spinQ = vec4(0.0, sin(spin*0.5), 0.0, cos(spin*0.5));
                                 ${outputs.gsplat}.quaternion = quatQuat(spinQ, ${inputs.gsplat}.quaternion);
                             } else if (effectType == 5) {
                                 // Rain Effect: 雨效果
-                                vec4 effectResult = rain(localPos, scales, t);
+                                vec4 effectResult = rain(localPos, splatScales, t);
                                 ${outputs.gsplat}.center = effectResult.xyz;
-                                ${outputs.gsplat}.scales = mix(vec3(.005), scales, pow(effectResult.w, 30.));
+                                ${outputs.gsplat}.scales = mix(vec3(.005), splatScales, pow(effectResult.w, 30.));
                                 float spin = -t*.3;
                                 vec4 spinQ = vec4(0.0, sin(spin*0.5), 0.0, cos(spin*0.5));
                                 ${outputs.gsplat}.quaternion = quatQuat(spinQ, ${inputs.gsplat}.quaternion);
+                            }
+                            // Shader effects (10-14)
+                            else if (effectType == 10) {
+                                // Electronic Effect
+                                ${outputs.gsplat}.center = headMovement(localPos, ${inputs.t});
+                                vec4 effect1 = fractal1(localPos, ${inputs.t}, ${inputs.intensity});
+                                ${outputs.gsplat}.rgba.rgba = mix(splatColor, splatColor*effect1, ${inputs.intensity});
+                            } 
+                            else if (effectType == 11) {
+                                // Deep Meditation Effect
+                                vec4 effectColor = fractal2(localPos, splatScales, splatColor, ${inputs.t}, ${inputs.intensity});
+                                ${outputs.gsplat}.rgba.rgba = mix(splatColor, effectColor, ${inputs.intensity});
+                                ${outputs.gsplat}.center = breathAnimation(localPos, ${inputs.t});
+                            } 
+                            else if (effectType == 12) {
+                                // Waves Effect
+                                vec4 effect = sin3D(localPos, ${inputs.t});
+                                ${outputs.gsplat}.rgba.rgba = mix(splatColor, splatColor*effect, ${inputs.intensity});
+                                vec3 pos = localPos;
+                                pos.y += 1.;
+                                pos *= (1. + effect.x * .05 * ${inputs.intensity});
+                                pos.y -= 1.;
+                                ${outputs.gsplat}.center = pos;
+                            } 
+                            else if (effectType == 13) {
+                                // Flare Effect
+                                vec4 e = flare(localPos, ${inputs.t});
+                                ${outputs.gsplat}.center = e.xyz;
+                                ${outputs.gsplat}.rgba.rgb = mix(splatColor.rgb, vec3(1.), abs(e.w));
+                                ${outputs.gsplat}.rgba.a = mix(splatColor.a, 0.3, abs(e.w));
+                            } 
+                            else if (effectType == 14) {
+                                // Disintegrate Effect
+                                vec4 e = disintegrate(localPos, ${inputs.t}, ${inputs.intensity});
+                                ${outputs.gsplat}.center = e.xyz;
+                                ${outputs.gsplat}.scales = mix(vec3(.01, .01, .01), ${inputs.gsplat}.scales, e.w);
                             }
                         `),
                     });
@@ -560,7 +701,8 @@
                     gsplat = d.apply({ 
                         gsplat, 
                         t: state.animateT,
-                        effectType: dyno.dynoInt(effectInt)
+                        effectType: dyno.dynoInt(effectInt),
+                        intensity: dyno.dynoFloat(state.effectParams.intensity || 0.8)
                     }).gsplat;
                     
                     return { gsplat };
@@ -594,6 +736,20 @@
                 const effectSelect = document.getElementById('effect-select');
                 if (effectSelect) {
                     effectSelect.value = state.effectParams.effect;
+                }
+                // 显示/隐藏强度控制（仅 shader effects 需要）
+                const intensityControl = document.getElementById('intensity-control');
+                const shaderEffects = ['Electronic', 'Deep Meditation', 'Waves', 'Flare', 'Disintegrate'];
+                const isShaderEffect = shaderEffects.includes(state.effectParams.effect);
+                if (intensityControl) {
+                    intensityControl.style.display = isShaderEffect ? 'block' : 'none';
+                }
+                // 设置强度滑块的值
+                const intensitySlider = document.getElementById('intensity-slider');
+                const intensityValue = document.getElementById('intensity-value');
+                if (intensitySlider && intensityValue) {
+                    intensitySlider.value = state.effectParams.intensity || 0.8;
+                    intensityValue.textContent = (state.effectParams.intensity || 0.8).toFixed(2);
                 }
             }
             
@@ -1009,6 +1165,15 @@
             const effect = e.target.value;
             state.effectParams.effect = effect;
             console.log('切换视觉效果:', effect);
+            
+            // 显示/隐藏强度控制（仅 shader effects 需要）
+            const intensityControl = document.getElementById('intensity-control');
+            const shaderEffects = ['Electronic', 'Deep Meditation', 'Waves', 'Flare', 'Disintegrate'];
+            const isShaderEffect = shaderEffects.includes(effect);
+            if (intensityControl) {
+                intensityControl.style.display = isShaderEffect ? 'block' : 'none';
+            }
+            
             if (state.splatMesh) {
                 // 确保 animateT 已初始化
                 if (!state.animateT) {
@@ -1026,6 +1191,22 @@
                 console.warn('切换效果时 splatMesh 不存在');
             }
         });
+
+        // 强度滑块控制
+        const intensitySlider = document.getElementById('intensity-slider');
+        const intensityValue = document.getElementById('intensity-value');
+        if (intensitySlider && intensityValue) {
+            intensitySlider.addEventListener('input', (e) => {
+                state.effectParams.intensity = parseFloat(e.target.value);
+                intensityValue.textContent = state.effectParams.intensity.toFixed(2);
+                if (state.splatMesh && state.effectParams.effect !== 'None') {
+                    setupSplatModifier(state.splatMesh, state.effectParams.effect);
+                    if (state.splatMesh.updateVersion) {
+                        state.splatMesh.updateVersion();
+                    }
+                }
+            });
+        }
 
         // 时间重置按钮
         document.getElementById('reset-time-btn').addEventListener('click', () => {
@@ -1064,19 +1245,37 @@
             if (effectSelect) {
                 const options = effectSelect.options;
                 if (state.lang === 'cn') {
+                    // Reveal effects
                     options[0].text = '无效果';
                     options[1].text = '魔法';
                     options[2].text = '扩散';
                     options[3].text = '展开';
                     options[4].text = '龙卷风';
                     options[5].text = '雨';
+                    // Shader effects
+                    if (options.length > 6) {
+                        options[6].text = '电子';
+                        options[7].text = '深度冥想';
+                        options[8].text = '波浪';
+                        options[9].text = '闪光';
+                        options[10].text = '分解';
+                    }
                 } else {
+                    // Reveal effects
                     options[0].text = 'None';
                     options[1].text = 'Magic';
                     options[2].text = 'Spread';
                     options[3].text = 'Unroll';
                     options[4].text = 'Twister';
                     options[5].text = 'Rain';
+                    // Shader effects
+                    if (options.length > 6) {
+                        options[6].text = 'Electronic';
+                        options[7].text = 'Deep Meditation';
+                        options[8].text = 'Waves';
+                        options[9].text = 'Flare';
+                        options[10].text = 'Disintegrate';
+                    }
                 }
             }
             // 更新旋转按钮文本
