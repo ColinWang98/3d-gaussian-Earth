@@ -477,7 +477,7 @@
                 { gsplat: dyno.Gsplat },
                 ({ gsplat }) => {
                     const d = new dyno.Dyno({
-                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int", intensity: "float", heartbeatTime: "float" },
+                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int", intensity: "float", heartbeatTime: "float", cameraPos: "vec3", cameraDir: "vec3" },
                         outTypes: { gsplat: dyno.Gsplat },
                         globals: () => [
                             dyno.unindent(`
@@ -609,31 +609,42 @@
                                     return vec4(mix(pos, p, tt), tt);
                                 }
 
-                                // 心跳波浪效果：从模型中心向外传播的波浪
-                                vec3 heartbeatWave(vec3 pos, float t, float heartbeatTime) {
+                                // 心跳波浪效果：从摄像机近端向远端传播的波浪
+                                vec3 heartbeatWave(vec3 pos, float t, float heartbeatTime, vec3 cameraPos, vec3 cameraDir) {
                                     if (heartbeatTime <= 0.0) return pos;
                                     
                                     // 计算从上次心跳到现在的时间
                                     float timeSinceBeat = t - heartbeatTime;
                                     
-                                    // 波浪持续时间（约 1 秒）
-                                    float waveDuration = 1.0;
+                                    // 波浪持续时间（约 1.5 秒，确保完整刷新）
+                                    float waveDuration = 1.5;
                                     if (timeSinceBeat < 0.0 || timeSinceBeat > waveDuration) return pos;
                                     
-                                    // 计算到模型中心的距离
-                                    float dist = length(pos);
+                                    // 计算粒子相对于摄像机的位置
+                                    vec3 toParticle = pos - cameraPos;
                                     
-                                    // 波浪传播速度
-                                    float waveSpeed = 5.0;
+                                    // 计算粒子沿摄像机朝向的距离（从近端到远端）
+                                    float distAlongCamera = dot(toParticle, cameraDir);
+                                    
+                                    // 波浪传播速度（从近端向远端）
+                                    float waveSpeed = 8.0;
                                     float waveFront = timeSinceBeat * waveSpeed;
                                     
                                     // 计算波浪强度（距离波浪前沿越近，强度越大）
-                                    float waveDist = abs(dist - waveFront);
-                                    float waveIntensity = exp(-waveDist * 3.0) * (1.0 - timeSinceBeat / waveDuration);
+                                    float waveDist = abs(distAlongCamera - waveFront);
+                                    float waveIntensity = exp(-waveDist * 2.0) * (1.0 - timeSinceBeat / waveDuration);
                                     
-                                    // 应用垂直方向的起伏
-                                    vec3 direction = normalize(pos);
-                                    pos += direction * waveIntensity * 0.3 * sin(dist * 2.0 - timeSinceBeat * 10.0);
+                                    // 计算垂直于摄像机方向的向量（用于起伏）
+                                    vec3 perpDir = normalize(toParticle - cameraDir * distAlongCamera);
+                                    if (length(perpDir) < 0.001) {
+                                        perpDir = vec3(0.0, 1.0, 0.0); // 如果粒子在摄像机正前方，使用垂直方向
+                                    }
+                                    
+                                    // 应用起伏效果：垂直于摄像机方向
+                                    pos += perpDir * waveIntensity * 0.4 * sin(distAlongCamera * 0.5 - timeSinceBeat * 8.0);
+                                    
+                                    // 应用轻微的径向扩散（沿摄像机方向）
+                                    pos += cameraDir * waveIntensity * 0.1;
                                     
                                     return pos;
                                 }
@@ -647,6 +658,8 @@
                             vec4 splatColor = ${inputs.gsplat}.rgba;
                             float t = ${inputs.t};
                             float heartbeatTime = ${inputs.heartbeatTime};
+                            vec3 cameraPos = ${inputs.cameraPos};
+                            vec3 cameraDir = ${inputs.cameraDir};
                             float l = length(localPos.xz);
                             int effectType = int(${inputs.effectType});
                             
@@ -655,26 +668,37 @@
                                 if (heartbeatTime > 0.0) {
                                     // 计算从上次心跳到现在的时间
                                     float timeSinceBeat = t - heartbeatTime;
-                                    float waveDuration = 1.0;
+                                    float waveDuration = 1.5;
                                     
-                                    // 只在波浪持续时间内应用效果
+                                    // 只在波浪持续时间内应用效果（每次心跳完整刷新）
                                     if (timeSinceBeat >= 0.0 && timeSinceBeat <= waveDuration) {
-                                        // 先应用心跳波浪效果
-                                        localPos = heartbeatWave(localPos, t, heartbeatTime);
+                                        // 计算粒子相对于摄像机的位置
+                                        vec3 toParticle = localPos - cameraPos;
+                                        float distAlongCamera = dot(toParticle, cameraDir);
+                                        
+                                        // 波浪传播速度（从近端向远端）
+                                        float waveSpeed = 8.0;
+                                        float waveFront = timeSinceBeat * waveSpeed;
+                                        
+                                        // 计算波浪强度（距离波浪前沿越近，强度越大）
+                                        float waveDist = abs(distAlongCamera - waveFront);
+                                        float waveIntensity = exp(-waveDist * 2.0) * (1.0 - timeSinceBeat / waveDuration);
+                                        
+                                        // 先应用心跳波浪效果（从摄像机近端到远端）
+                                        localPos = heartbeatWave(localPos, t, heartbeatTime, cameraPos, cameraDir);
                                         
                                         // 应用粒子化扩散效果：根据心跳波浪增加粒子尺寸和扩散
-                                        float dist = length(localPos);
-                                        float waveSpeed = 5.0;
-                                        float waveFront = timeSinceBeat * waveSpeed;
-                                        float waveDist = abs(dist - waveFront);
-                                        float waveIntensity = exp(-waveDist * 3.0) * (1.0 - timeSinceBeat / waveDuration);
+                                        // 计算垂直于摄像机方向的向量
+                                        vec3 perpDir = normalize(toParticle - cameraDir * distAlongCamera);
+                                        if (length(perpDir) < 0.001) {
+                                            perpDir = vec3(0.0, 1.0, 0.0);
+                                        }
                                         
-                                        // 增加粒子扩散：向外推粒子
-                                        vec3 direction = normalize(localPos);
-                                        localPos += direction * waveIntensity * 0.3;
+                                        // 增加粒子扩散：垂直于摄像机方向扩散
+                                        localPos += perpDir * waveIntensity * 0.5;
                                         
-                                        // 增加粒子尺寸
-                                        splatScales *= (1.0 + waveIntensity * 0.8);
+                                        // 增加粒子尺寸（随波浪强度变化）
+                                        splatScales *= (1.0 + waveIntensity * 1.2);
                                     }
                                 }
                                 ${outputs.gsplat}.center = localPos;
@@ -683,7 +707,7 @@
                             }
                             // 应用心跳波浪效果（如果启用了生理信号且不是无效果模式）
                             else if (heartbeatTime > 0.0) {
-                                localPos = heartbeatWave(localPos, t, heartbeatTime);
+                                localPos = heartbeatWave(localPos, t, heartbeatTime, cameraPos, cameraDir);
                             }
                             
                             if (effectType == 1) {
@@ -767,12 +791,24 @@
                         heartbeatTime = state.audiuno.lastHeartbeatTime - state.effectStartTime;
                     }
                     
+                    // 获取摄像机位置和方向
+                    let cameraPos = new THREE.Vector3(0, 0, 5);
+                    let cameraDir = new THREE.Vector3(0, 0, -1);
+                    if (state.camera) {
+                        cameraPos = state.camera.position.clone();
+                        cameraDir = new THREE.Vector3();
+                        state.camera.getWorldDirection(cameraDir);
+                    }
+                    
+                    // 传递 vec3 作为数组 [x, y, z]
                     gsplat = d.apply({ 
                         gsplat, 
                         t: state.animateT,
                         effectType: dyno.dynoInt(effectInt),
                         intensity: dyno.dynoFloat(state.effectParams.intensity || 0.8),
-                        heartbeatTime: dyno.dynoFloat(heartbeatTime)
+                        heartbeatTime: dyno.dynoFloat(heartbeatTime),
+                        cameraPos: [cameraPos.x, cameraPos.y, cameraPos.z],
+                        cameraDir: [cameraDir.x, cameraDir.y, cameraDir.z]
                     }).gsplat;
                     
                     return { gsplat };
