@@ -166,7 +166,7 @@
         import { SparkControls, SplatMesh, dyno } from '@sparkjsdev/spark';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-            const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None', intensity: 0.8 }, animateT: null, baseTime: 0, effectStartTime: 0, modelCenter: null, audiuno: { port: null, reader: null, heartRate: 0, isConnected: false, usePhysiological: true, lastHeartbeatTime: 0, heartbeatTimes: [] }, isInitializing: false };
+            const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None', intensity: 0.8 }, animateT: null, baseTime: 0, effectStartTime: 0, modelCenter: null, audiuno: { port: null, reader: null, heartRate: 0, isConnected: false, usePhysiological: true, lastHeartbeatTime: 0, heartbeatTimes: [], heartbeatPeaks: [] }, isInitializing: false };
         let ACTIVE_GEMINI_KEY = localStorage.getItem('MY_GEMINI_KEY') || '';
         
         // DeepL 自动翻译函数
@@ -237,10 +237,14 @@
             if (ACTIVE_GEMINI_KEY) {
                 cfg.style.display = 'none';
                 main.style.display = 'flex';
-                // 首次打开当前地点时打个招呼
+                // 首次打开当前地点时打个招呼（根据当前语言设置）
                 if (document.getElementById('chat-msgs').children.length === 0 && state.currentLoc) {
                     const locName = state.currentLoc.name || state.currentLoc.name_en || '这个地方';
-                    addChatMessage('agent', `你好，我是这个场景的拍摄者，现在带你看：${locName}。可以随便问我问题～`);
+                    if (state.lang === 'cn') {
+                        addChatMessage('agent', `你好，我是这个场景的拍摄者，现在带你看：${locName}。可以随便问我问题～`);
+                    } else {
+                        addChatMessage('agent', `Hi, I'm the photographer of this scene. Let me show you: ${locName}. Feel free to ask me anything!`);
+                    }
                 }
             } else {
                 cfg.style.display = 'block';
@@ -268,6 +272,13 @@
             }
         }
 
+        // 检测文本语言（简单检测：包含中文字符则为中文）
+        function detectLanguage(text) {
+            // 检测是否包含中文字符
+            const chineseRegex = /[\u4e00-\u9fa5]/;
+            return chineseRegex.test(text) ? 'cn' : 'en';
+        }
+
         async function handleChat() {
             if (!ACTIVE_GEMINI_KEY) {
                 alert('请先在右下角输入 Gemini API Key');
@@ -279,12 +290,18 @@
             addChatMessage('user', text);
             input.value = '';
 
-            const loc = state.currentLoc || {};
-            const locName = loc.name_en || loc.name || '';
-            const locDesc = loc.desc_en || loc.desc || '';
-            const sys = `你是这张照片的拍摄者，也是这个 3D 全息场景的创建者。用户正在查看你拍摄并重建的场景。
+            // 检测用户输入的语言
+            const userLang = detectLanguage(text);
 
-你的身份：照片提供者/场景创建者
+            const loc = state.currentLoc || {};
+            const locName = userLang === 'cn' ? (loc.name || loc.name_en || '这个地方') : (loc.name_en || loc.name || 'this place');
+            const locDesc = userLang === 'cn' ? (loc.desc || loc.desc_en || '') : (loc.desc_en || loc.desc || '');
+            
+            // 根据用户语言生成系统提示词
+            const sys = userLang === 'cn' 
+                ? `你是这张照片的拍摄者，也是这个 3D 全息场景的创建者。用户正在查看你拍摄并重建的场景。
+
+你的身份：照片提供者
 场景地点：${locName}
 场景描述：${locDesc}
 
@@ -294,7 +311,20 @@
 - 回答用户关于场景的问题
 - 基于照片内容提供更多背景信息
 
-回答要简短、自然，多用"唔"、"啊"、"其实"、"当时"等口语化表达，就像和朋友聊天一样。`;
+回答要简短、自然，多用"唔"、"啊"、"其实"、"当时"等口语化表达，就像和朋友聊天一样。请用中文回复。`
+                : `You are the photographer of this photo and the creator of this 3D holographic scene. The user is viewing the scene you photographed and reconstructed.
+
+Your identity: Photo provider
+Location: ${locName}
+Scene description: ${locDesc}
+
+Please chat with the user in a casual, friendly way as the photographer in first person. You can:
+- Share your experiences and feelings when photographing this scene
+- Describe the details and features of the scene
+- Answer questions about the scene
+- Provide more background information based on the photo content
+
+Keep your answers brief and natural, use casual expressions like "well", "actually", "at that time", just like chatting with a friend. Please reply in English.`;
 
             try {
                 // 构建请求的 parts 数组
@@ -319,8 +349,9 @@
                 // 添加用户的问题
                 parts.push({ text: text });
 
-                // 尝试使用 gemini-1.5-flash 或 gemini-pro，因为 gemini-2.5-flash 可能不存在
-                let modelName = 'gemini-1.5-flash';
+                // 使用 gemini-pro 作为默认模型（最稳定的选择）
+                // 如果失败，尝试其他可用的模型
+                let modelName = 'gemini-pro';
                 let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -331,10 +362,25 @@
                     })
                 });
                 
-                // 如果失败，尝试使用 gemini-pro
-                if (!res.ok && res.status === 400) {
-                    console.warn('gemini-1.5-flash 失败，尝试 gemini-pro');
-                    modelName = 'gemini-pro';
+                // 如果失败，尝试 gemini-1.5-pro-latest
+                if (!res.ok && (res.status === 400 || res.status === 404)) {
+                    console.warn('gemini-pro 失败，尝试 gemini-1.5-pro-latest');
+                    modelName = 'gemini-1.5-pro-latest';
+                    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [
+                                { role: 'user', parts: parts }
+                            ]
+                        })
+                    });
+                }
+                
+                // 如果还是失败，尝试 gemini-1.5-flash-latest
+                if (!res.ok && (res.status === 400 || res.status === 404)) {
+                    console.warn('gemini-1.5-pro-latest 失败，尝试 gemini-1.5-flash-latest');
+                    modelName = 'gemini-1.5-flash-latest';
                     res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -353,12 +399,20 @@
                 }
                 
                 const data = await res.json();
-                const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || '唔，我一时间有点想不到，等我再研究下先～';
+                const userLang = detectLanguage(text);
+                const defaultReply = userLang === 'cn' 
+                    ? '唔，我一时间有点想不到，等我再研究下先～'
+                    : 'Well, I need to think about that for a moment...';
+                const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || defaultReply;
                 addChatMessage('agent', reply);
             } catch (e) {
                 console.error('Gemini 调用失败:', e);
                 const errorMsg = e.message || '未知错误';
-                addChatMessage('agent', `唔，AI 那边出问题了：${errorMsg}。请检查 API Key 是否正确，或者稍后再试。`);
+                const userLang = detectLanguage(text);
+                const errorMessage = userLang === 'cn'
+                    ? `唔，AI 那边出问题了：${errorMsg}。请检查 API Key 是否正确，或者稍后再试。`
+                    : `Oops, there's a problem with the AI: ${errorMsg}. Please check if your API Key is correct, or try again later.`;
+                addChatMessage('agent', errorMessage);
             }
         }
 
@@ -500,7 +554,7 @@
                 { gsplat: dyno.Gsplat },
                 ({ gsplat }) => {
                     const d = new dyno.Dyno({
-                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int", intensity: "float", heartbeatTime: "float" },
+                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int", intensity: "float", heartbeatTime: "float", heartbeatTime1: "float", heartbeatTime2: "float", heartbeatTime3: "float" },
                         outTypes: { gsplat: dyno.Gsplat },
                         globals: () => [
                             dyno.unindent(`
@@ -668,14 +722,19 @@
                             vec4 splatColor = ${inputs.gsplat}.rgba;
                             float t = ${inputs.t};
                             float heartbeatTime = ${inputs.heartbeatTime};
+                            float heartbeatTime1 = ${inputs.heartbeatTime1};
+                            float heartbeatTime2 = ${inputs.heartbeatTime2};
+                            float heartbeatTime3 = ${inputs.heartbeatTime3};
                             float l = length(localPos.xz);
                             int effectType = int(${inputs.effectType});
                             
                             // 无效果模式（effectType == 0）：只在有心跳数据时应用类似 Magic 效果的径向展开
                             if (effectType == 0) {
-                                if (heartbeatTime > 0.0) {
+                                // 使用最近一次心跳（heartbeatTime1 是最新的）
+                                float activeBeat = heartbeatTime1 > 0.0 ? heartbeatTime1 : heartbeatTime;
+                                if (activeBeat > 0.0) {
                                     // 计算从上次心跳到现在的时间
-                                    float timeSinceBeat = t - heartbeatTime;
+                                    float timeSinceBeat = t - activeBeat;
                                     float waveDuration = 2.0; // 心跳效果持续时间
                                     
                                     // 只在波浪持续时间内应用效果（每次心跳完整刷新）
@@ -785,18 +844,64 @@
                             }
                             // Shader effects (10-14)
                             else if (effectType == 12) {
-                                // Waves Effect
-                                vec4 effect = sin3D(localPos, ${inputs.t});
+                                // Waves Effect with heartbeat rhythm
+                                // 计算心跳律动影响：叠加所有活跃的心跳效果
+                                float heartbeatModulation = 0.0;
+                                
+                                // 处理每个心跳（最多 3 个）
+                                float[] beats = float[](heartbeatTime1, heartbeatTime2, heartbeatTime3);
+                                for (int i = 0; i < 3; i++) {
+                                    if (beats[i] > 0.0) {
+                                        float timeSinceBeat = t - beats[i];
+                                        float beatDuration = 1.5; // 每次心跳效果持续时间
+                                        if (timeSinceBeat >= 0.0 && timeSinceBeat <= beatDuration) {
+                                            // 每次心跳产生不同的峰值（基于心跳索引）
+                                            float peakVariation = 0.5 + 0.5 * sin(float(i) * 2.094); // 0.5-1.0 之间变化
+                                            // 平滑的心跳脉冲：快速上升，缓慢下降
+                                            float pulse = exp(-timeSinceBeat * 3.0) * peakVariation;
+                                            heartbeatModulation += pulse;
+                                        }
+                                    }
+                                }
+                                // 限制叠加值，避免过强
+                                heartbeatModulation = min(heartbeatModulation, 1.5);
+                                
+                                // 将心跳律动应用到效果（不是调整强度，而是影响效果本身）
+                                float modulatedT = t + heartbeatModulation * 0.5; // 心跳加速时间，产生不同的峰值
+                                vec4 effect = sin3D(localPos, modulatedT);
+                                // 保持原始 intensity，但让心跳律动影响效果的参数
                                 ${outputs.gsplat}.rgba.rgba = mix(splatColor, splatColor*effect, ${inputs.intensity});
                                 vec3 pos = localPos;
                                 pos.y += 1.;
-                                pos *= (1. + effect.x * .05 * ${inputs.intensity});
+                                // 心跳律动影响位置变化
+                                pos *= (1. + effect.x * .05 * ${inputs.intensity} * (1.0 + heartbeatModulation * 0.2));
                                 pos.y -= 1.;
                                 ${outputs.gsplat}.center = pos;
                             } 
                             else if (effectType == 14) {
-                                // Disintegrate Effect
-                                vec4 e = disintegrate(localPos, ${inputs.t}, ${inputs.intensity});
+                                // Disintegrate Effect with heartbeat rhythm
+                                // 计算心跳律动影响：叠加所有活跃的心跳效果
+                                float heartbeatModulation = 0.0;
+                                
+                                float[] beats = float[](heartbeatTime1, heartbeatTime2, heartbeatTime3);
+                                for (int i = 0; i < 3; i++) {
+                                    if (beats[i] > 0.0) {
+                                        float timeSinceBeat = t - beats[i];
+                                        float beatDuration = 1.5;
+                                        if (timeSinceBeat >= 0.0 && timeSinceBeat <= beatDuration) {
+                                            // 每次心跳产生不同的峰值
+                                            float peakVariation = 0.5 + 0.5 * sin(float(i) * 2.094);
+                                            float pulse = exp(-timeSinceBeat * 3.0) * peakVariation;
+                                            heartbeatModulation += pulse;
+                                        }
+                                    }
+                                }
+                                heartbeatModulation = min(heartbeatModulation, 1.5);
+                                
+                                // 将心跳律动应用到效果（影响分解的速度和强度）
+                                float modulatedT = t + heartbeatModulation * 0.3; // 心跳影响时间参数
+                                // 保持原始 intensity，但让心跳律动影响分解效果
+                                vec4 e = disintegrate(localPos, modulatedT, ${inputs.intensity} * (1.0 + heartbeatModulation * 0.2));
                                 ${outputs.gsplat}.center = e.xyz;
                                 ${outputs.gsplat}.scales = mix(vec3(.01, .01, .01), ${inputs.gsplat}.scales, e.w);
                             }
@@ -809,18 +914,37 @@
                         return { gsplat };
                     }
                     
-                    // 计算最近一次心跳的时间（相对于 effectStartTime）
-                    let heartbeatTime = -1.0;
-                    if (state.audiuno.usePhysiological && state.audiuno.lastHeartbeatTime > 0) {
-                        heartbeatTime = state.audiuno.lastHeartbeatTime - state.effectStartTime;
+                    // 计算心跳时间数组（相对于 effectStartTime）
+                    // 保留最近几次心跳，用于叠加效果
+                    let heartbeatTimes = [];
+                    if (state.audiuno.usePhysiological && state.audiuno.heartbeatTimes && state.audiuno.heartbeatTimes.length > 0) {
+                        // 只保留最近 3 次心跳（用于叠加效果）
+                        const recentBeats = state.audiuno.heartbeatTimes.slice(-3);
+                        heartbeatTimes = recentBeats.map(beatTime => beatTime - state.effectStartTime).filter(t => t >= 0);
+                    } else if (state.audiuno.usePhysiological && state.audiuno.lastHeartbeatTime > 0) {
+                        // 如果没有历史记录，使用最近一次心跳
+                        heartbeatTimes = [state.audiuno.lastHeartbeatTime - state.effectStartTime].filter(t => t >= 0);
                     }
+                    
+                    // 为了兼容性，也传递最近一次心跳时间
+                    // heartbeatTimes 数组：最新的在最后，所以 heartbeatTime1 应该是最新的
+                    let heartbeatTime = heartbeatTimes.length > 0 ? heartbeatTimes[heartbeatTimes.length - 1] : -1.0;
+                    // 反转顺序，让 heartbeatTime1 是最新的心跳
+                    let heartbeatTime1 = heartbeatTimes.length > 0 ? heartbeatTimes[heartbeatTimes.length - 1] : -1.0;
+                    let heartbeatTime2 = heartbeatTimes.length > 1 ? heartbeatTimes[heartbeatTimes.length - 2] : -1.0;
+                    let heartbeatTime3 = heartbeatTimes.length > 2 ? heartbeatTimes[heartbeatTimes.length - 3] : -1.0;
+                    
+                    console.log('心跳时间:', { heartbeatTime, heartbeatTime1, heartbeatTime2, heartbeatTime3, times: heartbeatTimes, length: heartbeatTimes.length });
                     
                     gsplat = d.apply({ 
                         gsplat, 
                         t: state.animateT,
                         effectType: dyno.dynoInt(effectInt),
                         intensity: dyno.dynoFloat(state.effectParams.intensity || 0.8),
-                        heartbeatTime: dyno.dynoFloat(heartbeatTime)
+                        heartbeatTime: dyno.dynoFloat(heartbeatTime),
+                        heartbeatTime1: dyno.dynoFloat(heartbeatTime1),
+                        heartbeatTime2: dyno.dynoFloat(heartbeatTime2),
+                        heartbeatTime3: dyno.dynoFloat(heartbeatTime3)
                     }).gsplat;
                     
                     return { gsplat };
@@ -1377,18 +1501,76 @@
                 localStorage.setItem('MY_GEMINI_KEY', key);
                 document.getElementById('gemini-config-ui').style.display = 'none';
                 document.getElementById('chat-main-ui').style.display = 'flex';
-                addChatMessage('agent', '好呀，我已经连上 Gemini 了，随便问我关于这个场景的任何问题～');
+                // 根据当前语言设置欢迎消息
+                if (state.lang === 'cn') {
+                    addChatMessage('agent', '好呀，我已经连上 Gemini 了，随便问我关于这个场景的任何问题～');
+                } else {
+                    addChatMessage('agent', 'Great! I\'ve connected to Gemini. Feel free to ask me anything about this scene!');
+                }
             }
         };
 
         // 聊天发送按钮和回车键
         document.getElementById('chat-send').onclick = () => { handleChat(); };
-        document.getElementById('chat-input').addEventListener('keydown', (e) => {
+        
+        // 获取聊天输入框
+        const chatInput = document.getElementById('chat-input');
+        
+        // 处理键盘事件：阻止与 3D viewer 快捷键冲突
+        chatInput.addEventListener('keydown', (e) => {
+            // 阻止事件冒泡，防止触发 3D viewer 的快捷键
+            e.stopPropagation();
+            
             if (e.key === 'Enter') {
                 e.preventDefault();
                 handleChat();
             }
         });
+        
+        // 处理键盘事件：阻止所有键盘事件冒泡
+        chatInput.addEventListener('keyup', (e) => {
+            e.stopPropagation();
+        });
+        
+        // 处理输入事件：阻止输入事件冒泡
+        chatInput.addEventListener('input', (e) => {
+            e.stopPropagation();
+        });
+        
+        // 当输入框获得焦点时，禁用 3D viewer 的控制器
+        chatInput.addEventListener('focus', () => {
+            if (state.controls) {
+                // 临时禁用控制器（如果支持）
+                if (typeof state.controls.enabled !== 'undefined') {
+                    state.controls.enabled = false;
+                }
+            }
+            // 阻止所有键盘事件传播到 document
+            document.addEventListener('keydown', preventViewerShortcuts, true);
+            document.addEventListener('keyup', preventViewerShortcuts, true);
+        });
+        
+        // 当输入框失去焦点时，重新启用 3D viewer 的控制器
+        chatInput.addEventListener('blur', () => {
+            if (state.controls) {
+                // 重新启用控制器
+                if (typeof state.controls.enabled !== 'undefined') {
+                    state.controls.enabled = true;
+                }
+            }
+            // 移除事件监听器
+            document.removeEventListener('keydown', preventViewerShortcuts, true);
+            document.removeEventListener('keyup', preventViewerShortcuts, true);
+        });
+        
+        // 阻止 3D viewer 快捷键的函数
+        function preventViewerShortcuts(e) {
+            // 如果事件来自聊天输入框或其父元素，阻止传播
+            const target = e.target;
+            if (target && (target.id === 'chat-input' || target.closest('#chat-window'))) {
+                e.stopPropagation();
+            }
+        }
 
         // 语言切换按钮
         document.getElementById('lang-toggle').onclick = () => {
@@ -1637,10 +1819,23 @@
             if (state.audiuno.usePhysiological && previousHR > 0 && hr !== previousHR) {
                 // 记录心跳时间（相对于 baseTime）
                 state.audiuno.lastHeartbeatTime = state.baseTime;
-                console.log('💓 心跳检测:', hr, 'BPM, 时间:', state.audiuno.lastHeartbeatTime);
+                // 添加到心跳历史记录（保留最近 5 次）
+                if (!state.audiuno.heartbeatTimes) {
+                    state.audiuno.heartbeatTimes = [];
+                }
+                state.audiuno.heartbeatTimes.push(state.baseTime);
+                // 只保留最近 5 次心跳
+                if (state.audiuno.heartbeatTimes.length > 5) {
+                    state.audiuno.heartbeatTimes.shift();
+                }
+                console.log('💓 心跳检测:', hr, 'BPM, 时间:', state.audiuno.lastHeartbeatTime, '历史记录:', state.audiuno.heartbeatTimes.length);
             } else if (state.audiuno.usePhysiological && previousHR === 0 && hr > 0) {
                 // 首次收到心率数据，初始化心跳时间
                 state.audiuno.lastHeartbeatTime = state.baseTime;
+                if (!state.audiuno.heartbeatTimes) {
+                    state.audiuno.heartbeatTimes = [];
+                }
+                state.audiuno.heartbeatTimes.push(state.baseTime);
                 
                 // 如果当前是"无效果"模式，需要重新创建 modifier 以应用心跳波浪
                 if (state.splatMesh && state.effectParams.effect === 'None') {
@@ -1692,7 +1887,16 @@
             const timeSinceLastBeat = state.baseTime - state.audiuno.lastHeartbeatTime;
             if (timeSinceLastBeat >= heartbeatInterval) {
                 state.audiuno.lastHeartbeatTime = state.baseTime;
-                console.log('💓 预测心跳:', state.audiuno.heartRate, 'BPM');
+                // 添加到心跳历史记录
+                if (!state.audiuno.heartbeatTimes) {
+                    state.audiuno.heartbeatTimes = [];
+                }
+                state.audiuno.heartbeatTimes.push(state.baseTime);
+                // 只保留最近 5 次心跳
+                if (state.audiuno.heartbeatTimes.length > 5) {
+                    state.audiuno.heartbeatTimes.shift();
+                }
+                console.log('💓 预测心跳:', state.audiuno.heartRate, 'BPM, 历史记录:', state.audiuno.heartbeatTimes.length);
             }
         }
 
