@@ -91,10 +91,7 @@
                     <option value="Rain">雨</option>
                 </optgroup>
                 <optgroup label="Shader Effects">
-                    <option value="Electronic">电子</option>
-                    <option value="Deep Meditation">深度冥想</option>
                     <option value="Waves">波浪</option>
-                    <option value="Flare">闪光</option>
                     <option value="Disintegrate">分解</option>
                 </optgroup>
             </select>
@@ -171,7 +168,7 @@
         import { SparkControls, SplatMesh, dyno } from '@sparkjsdev/spark';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-        const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None', intensity: 0.8 }, animateT: null, baseTime: 0, effectStartTime: 0, isRotating: true, rotationAngle: 0, rotationSpeed: 0.3, modelCenter: null, audiuno: { port: null, reader: null, heartRate: 0, isConnected: false, usePhysiological: true, lastHeartbeatTime: 0, heartbeatTimes: [] } };
+        const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None', intensity: 0.8 }, animateT: null, baseTime: 0, effectStartTime: 0, isRotating: true, rotationAngle: 0, rotationSpeed: 0.3, modelCenter: null, audiuno: { port: null, reader: null, heartRate: 0, isConnected: false, usePhysiological: true, lastHeartbeatTime: 0, heartbeatTimes: [] }, isInitializing: false };
         let ACTIVE_GEMINI_KEY = localStorage.getItem('MY_GEMINI_KEY') || '';
         
         // DeepL 自动翻译函数
@@ -430,13 +427,6 @@
         // 设置 Splat 视觉效果
         function setupSplatModifier(splatMesh, effectType) {
             console.log('setupSplatModifier 调用，effectType:', effectType, 'animateT 存在:', !!state.animateT);
-            if (effectType === 'None') {
-                splatMesh.objectModifier = null;
-                splatMesh.updateGenerator();
-                console.log('效果已清除');
-                return;
-            }
-            
             // 确保 animateT 已初始化
             if (!state.animateT) {
                 console.warn('animateT 未初始化，无法应用效果，尝试初始化');
@@ -445,6 +435,19 @@
                     console.error('无法初始化 animateT');
                     return;
                 }
+            }
+            
+            // 如果选择"无效果"，但启用了心跳数据，仍然需要创建 modifier 来应用心跳波浪
+            if (effectType === 'None') {
+                // 如果没有心跳数据，直接清除效果
+                if (!state.audiuno.usePhysiological || state.audiuno.lastHeartbeatTime <= 0) {
+                    splatMesh.objectModifier = null;
+                    splatMesh.updateGenerator();
+                    console.log('效果已清除');
+                    return;
+                }
+                // 如果有心跳数据，继续创建 modifier 以应用心跳波浪效果
+                console.log('无效果模式，但将应用心跳波浪效果');
             }
 
             // Reveal effects 使用 1-5，Shader effects 使用 10-14
@@ -457,19 +460,17 @@
             };
             
             const shaderEffectMap = {
-                'Electronic': 10,
-                'Deep Meditation': 11,
                 'Waves': 12,
-                'Flare': 13,
                 'Disintegrate': 14
             };
             
             const effectTypeMap = {
+                'None': 0,
                 ...revealEffectMap,
                 ...shaderEffectMap
             };
 
-            const effectInt = effectTypeMap[effectType] || 1;
+            const effectInt = effectTypeMap[effectType] ?? (effectType === 'None' ? 0 : 1);
 
             splatMesh.objectModifier = dyno.dynoBlock(
                 { gsplat: dyno.Gsplat },
@@ -649,8 +650,39 @@
                             float l = length(localPos.xz);
                             int effectType = int(${inputs.effectType});
                             
-                            // 应用心跳波浪效果（如果启用了生理信号）
-                            if (heartbeatTime > 0.0) {
+                            // 无效果模式（effectType == 0）：只在有心跳数据时应用心跳波浪和粒子化扩散
+                            if (effectType == 0) {
+                                if (heartbeatTime > 0.0) {
+                                    // 计算从上次心跳到现在的时间
+                                    float timeSinceBeat = t - heartbeatTime;
+                                    float waveDuration = 1.0;
+                                    
+                                    // 只在波浪持续时间内应用效果
+                                    if (timeSinceBeat >= 0.0 && timeSinceBeat <= waveDuration) {
+                                        // 先应用心跳波浪效果
+                                        localPos = heartbeatWave(localPos, t, heartbeatTime);
+                                        
+                                        // 应用粒子化扩散效果：根据心跳波浪增加粒子尺寸和扩散
+                                        float dist = length(localPos);
+                                        float waveSpeed = 5.0;
+                                        float waveFront = timeSinceBeat * waveSpeed;
+                                        float waveDist = abs(dist - waveFront);
+                                        float waveIntensity = exp(-waveDist * 3.0) * (1.0 - timeSinceBeat / waveDuration);
+                                        
+                                        // 增加粒子扩散：向外推粒子
+                                        vec3 direction = normalize(localPos);
+                                        localPos += direction * waveIntensity * 0.3;
+                                        
+                                        // 增加粒子尺寸
+                                        splatScales *= (1.0 + waveIntensity * 0.8);
+                                    }
+                                }
+                                ${outputs.gsplat}.center = localPos;
+                                ${outputs.gsplat}.scales = splatScales;
+                                ${outputs.gsplat}.rgba = splatColor;
+                            }
+                            // 应用心跳波浪效果（如果启用了生理信号且不是无效果模式）
+                            else if (heartbeatTime > 0.0) {
                                 localPos = heartbeatWave(localPos, t, heartbeatTime);
                             }
                             
@@ -704,18 +736,6 @@
                                 ${outputs.gsplat}.quaternion = quatQuat(spinQ, ${inputs.gsplat}.quaternion);
                             }
                             // Shader effects (10-14)
-                            else if (effectType == 10) {
-                                // Electronic Effect
-                                ${outputs.gsplat}.center = headMovement(localPos, ${inputs.t});
-                                vec4 effect1 = fractal1(localPos, ${inputs.t}, ${inputs.intensity});
-                                ${outputs.gsplat}.rgba.rgba = mix(splatColor, splatColor*effect1, ${inputs.intensity});
-                            } 
-                            else if (effectType == 11) {
-                                // Deep Meditation Effect
-                                vec4 effectColor = fractal2(localPos, splatScales, splatColor, ${inputs.t}, ${inputs.intensity});
-                                ${outputs.gsplat}.rgba.rgba = mix(splatColor, effectColor, ${inputs.intensity});
-                                ${outputs.gsplat}.center = breathAnimation(localPos, ${inputs.t});
-                            } 
                             else if (effectType == 12) {
                                 // Waves Effect
                                 vec4 effect = sin3D(localPos, ${inputs.t});
@@ -725,13 +745,6 @@
                                 pos *= (1. + effect.x * .05 * ${inputs.intensity});
                                 pos.y -= 1.;
                                 ${outputs.gsplat}.center = pos;
-                            } 
-                            else if (effectType == 13) {
-                                // Flare Effect
-                                vec4 e = flare(localPos, ${inputs.t});
-                                ${outputs.gsplat}.center = e.xyz;
-                                ${outputs.gsplat}.rgba.rgb = mix(splatColor.rgb, vec3(1.), abs(e.w));
-                                ${outputs.gsplat}.rgba.a = mix(splatColor.a, 0.3, abs(e.w));
                             } 
                             else if (effectType == 14) {
                                 // Disintegrate Effect
@@ -770,74 +783,168 @@
         }
 
         // 3. 核心 3D 渲染 - 使用 Spark 库
-        document.getElementById('enter-btn').onclick = async () => {
-            const container = document.getElementById('splat-viewer');
-            const loader = document.getElementById('loading-overlay');
-            container.style.display = 'block';
-            loader.style.display = 'flex';
-
-            // 打开 3D 视图时隐藏地图和上层 UI，避免挡住模型交互
-            document.getElementById('ui-layer').style.display = 'none';
-            document.getElementById('map-background').style.display = 'none';
-            // 确保任务弹窗关闭，避免灰色蒙层残留
-            const modal = document.getElementById('modal-overlay');
-            if (modal) modal.style.display = 'none';
-            // 显示聊天窗口（由 showChatUI 控制内部内容）
-            showChatUI();
+        // 清理 WebGL 资源的辅助函数
+        function cleanupWebGL() {
+            console.log('开始清理 WebGL 资源...');
             
-            // 显示效果控制面板
-            const effectControls = document.getElementById('effect-controls');
-            if (effectControls) {
-                effectControls.style.display = 'block';
-                // 设置当前选择的效果
-                const effectSelect = document.getElementById('effect-select');
-                if (effectSelect) {
-                    effectSelect.value = state.effectParams.effect;
-                }
-                // 显示/隐藏强度控制（仅 shader effects 需要）
-                const intensityControl = document.getElementById('intensity-control');
-                const shaderEffects = ['Electronic', 'Deep Meditation', 'Waves', 'Flare', 'Disintegrate'];
-                const isShaderEffect = shaderEffects.includes(state.effectParams.effect);
-                if (intensityControl) {
-                    intensityControl.style.display = isShaderEffect ? 'block' : 'none';
-                }
-                // 设置强度滑块的值
-                const intensitySlider = document.getElementById('intensity-slider');
-                const intensityValue = document.getElementById('intensity-value');
-                if (intensitySlider && intensityValue) {
-                    intensitySlider.value = state.effectParams.intensity || 0.8;
-                    intensityValue.textContent = (state.effectParams.intensity || 0.8).toFixed(2);
-                }
-            }
-            
-            // 显示旋转控制按钮
-            const rotateToggle = document.getElementById('rotate-toggle');
-            if (rotateToggle) {
-                rotateToggle.style.display = 'block';
-                rotateToggle.innerText = state.isRotating ? '⏸️ 暂停旋转' : '▶️ 继续旋转';
-            }
-            
-            // 显示语言切换按钮
-            const viewLangToggle = document.getElementById('view-lang-toggle');
-            if (viewLangToggle) {
-                viewLangToggle.style.display = 'block';
-                viewLangToggle.innerText = state.lang === 'cn' ? 'EN / 中' : '中 / EN';
-            }
-
-            // 清理之前的场景
+            // 停止动画循环
             if (state.animationId) {
                 cancelAnimationFrame(state.animationId);
                 state.animationId = null;
             }
+            
+            // 清理场景中的对象
+            if (state.scene) {
+                while (state.scene.children.length > 0) {
+                    const child = state.scene.children[0];
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(mat => {
+                                if (mat.map) mat.map.dispose();
+                                mat.dispose();
+                            });
+                        } else {
+                            if (child.material.map) child.material.map.dispose();
+                            child.material.dispose();
+                        }
+                    }
+                    state.scene.remove(child);
+                }
+                state.scene = null;
+            }
+            
+            // 清理渲染器
             if (state.renderer) {
-                container.removeChild(state.renderer.domElement);
-                state.renderer.dispose();
+                const container = document.getElementById('splat-viewer');
+                const canvas = state.renderer.domElement;
+                
+                // 安全地移除 canvas
+                if (container && canvas && canvas.parentNode === container) {
+                    try {
+                        container.removeChild(canvas);
+                    } catch (e) {
+                        console.warn('移除 canvas 失败:', e);
+                    }
+                }
+                
+                // 强制清理 WebGL 上下文
+                try {
+                    if (state.renderer && typeof state.renderer.getContext === 'function') {
+                        const gl = state.renderer.getContext();
+                        if (gl && !gl.isContextLost()) {
+                            const loseContext = gl.getExtension('WEBGL_lose_context');
+                            if (loseContext) {
+                                loseContext.loseContext();
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('清理 WebGL 上下文失败:', e);
+                }
+                
+                // 释放渲染器资源
+                try {
+                    state.renderer.dispose();
+                } catch (e) {
+                    console.warn('释放渲染器失败:', e);
+                }
+                
+                state.renderer = null;
             }
+            
+            // 清理控制器
             if (state.controls) {
-                state.controls.dispose();
+                try {
+                    if (typeof state.controls.dispose === 'function') {
+                        state.controls.dispose();
+                    }
+                } catch (e) {
+                    console.warn('清理控制器失败:', e);
+                }
+                state.controls = null;
             }
+            
+            // 清理其他资源
+            state.splatMesh = null;
+            state.camera = null;
+            state.animateT = null;
+            
+            console.log('WebGL 资源清理完成');
+        }
 
+        document.getElementById('enter-btn').onclick = async () => {
+            // 防止重复点击
+            if (state.isInitializing) {
+                console.log('正在初始化中，请稍候...');
+                return;
+            }
+            
+            const container = document.getElementById('splat-viewer');
+            const loader = document.getElementById('loading-overlay');
+            
+            // 设置初始化标志
+            state.isInitializing = true;
+            
             try {
+            container.style.display = 'block';
+                loader.style.display = 'flex';
+                loader.innerText = '🔄 正在初始化...';
+
+                // 打开 3D 视图时隐藏地图和上层 UI，避免挡住模型交互
+                document.getElementById('ui-layer').style.display = 'none';
+                document.getElementById('map-background').style.display = 'none';
+                // 确保任务弹窗关闭，避免灰色蒙层残留
+                const modal = document.getElementById('modal-overlay');
+                if (modal) modal.style.display = 'none';
+                // 显示聊天窗口（由 showChatUI 控制内部内容）
+                showChatUI();
+                
+                // 显示效果控制面板
+                const effectControls = document.getElementById('effect-controls');
+                if (effectControls) {
+                    effectControls.style.display = 'block';
+                    // 设置当前选择的效果
+                    const effectSelect = document.getElementById('effect-select');
+                    if (effectSelect) {
+                        effectSelect.value = state.effectParams.effect;
+                    }
+                    // 显示/隐藏强度控制（仅 shader effects 需要）
+                    const intensityControl = document.getElementById('intensity-control');
+                    const shaderEffects = ['Waves', 'Disintegrate'];
+                    const isShaderEffect = shaderEffects.includes(state.effectParams.effect);
+                    if (intensityControl) {
+                        intensityControl.style.display = isShaderEffect ? 'block' : 'none';
+                    }
+                    // 设置强度滑块的值
+                    const intensitySlider = document.getElementById('intensity-slider');
+                    const intensityValue = document.getElementById('intensity-value');
+                    if (intensitySlider && intensityValue) {
+                        intensitySlider.value = state.effectParams.intensity || 0.8;
+                        intensityValue.textContent = (state.effectParams.intensity || 0.8).toFixed(2);
+                    }
+                }
+                
+                // 显示旋转控制按钮
+                const rotateToggle = document.getElementById('rotate-toggle');
+                if (rotateToggle) {
+                    rotateToggle.style.display = 'block';
+                    rotateToggle.innerText = state.isRotating ? '⏸️ 暂停旋转' : '▶️ 继续旋转';
+                }
+                
+                // 显示语言切换按钮
+                const viewLangToggle = document.getElementById('view-lang-toggle');
+                if (viewLangToggle) {
+                    viewLangToggle.style.display = 'block';
+                    viewLangToggle.innerText = state.lang === 'cn' ? 'EN / 中' : '中 / EN';
+                }
+
+                // 清理之前的场景（使用改进的清理函数）
+                cleanupWebGL();
+                
+                // 等待一小段时间，确保清理完成
+                await new Promise(resolve => setTimeout(resolve, 100));
+
                 // 创建场景
                 state.scene = new THREE.Scene();
                 state.scene.background = new THREE.Color(0x1a1a1a);
@@ -851,8 +958,33 @@
                 );
                 state.camera.position.set(0, 0, 5);
 
-                // 创建渲染器
-                state.renderer = new THREE.WebGLRenderer({ antialias: true });
+                // 创建渲染器（添加错误处理和降级支持）
+                let rendererOptions = { 
+                    antialias: true,
+                    powerPreference: "high-performance",
+                    failIfMajorPerformanceCaveat: false
+                };
+                
+                try {
+                    state.renderer = new THREE.WebGLRenderer(rendererOptions);
+                } catch (e) {
+                    console.warn('WebGL2 创建失败，尝试 WebGL1:', e);
+                    // 如果 WebGL2 失败，尝试 WebGL1
+                    rendererOptions = { 
+                        antialias: false,
+                        powerPreference: "default"
+                    };
+                    try {
+                        state.renderer = new THREE.WebGLRenderer(rendererOptions);
+                    } catch (e2) {
+                        throw new Error('无法创建 WebGL 上下文。请检查浏览器和显卡驱动是否支持 WebGL。');
+                    }
+                }
+                
+                // 检查渲染器是否成功创建
+                if (!state.renderer || !state.renderer.getContext()) {
+                    throw new Error('WebGL 上下文创建失败');
+                }
                 state.renderer.setSize(window.innerWidth, window.innerHeight);
                 state.renderer.setPixelRatio(window.devicePixelRatio);
                 state.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1013,14 +1145,26 @@
                 };
                 window.addEventListener('resize', handleResize);
                 state.resizeHandler = handleResize; // 保存引用以便清理
+                
+                // 隐藏加载提示
+                loader.style.display = 'none';
+                
+                // 初始化完成，重置标志
+                state.isInitializing = false;
 
             } catch (err) {
                 console.error('加载模型失败:', err);
-                loader.innerText = '❌ 加载失败，请检查模型文件';
+                loader.innerText = '❌ 加载失败: ' + (err.message || '请检查模型文件');
                 loader.style.display = 'flex';
                 setTimeout(() => {
                     loader.style.display = 'none';
                 }, 3000);
+                
+                // 清理已创建的资源
+                cleanupWebGL();
+                
+                // 初始化失败，重置标志
+                state.isInitializing = false;
             }
         };
 
@@ -1247,7 +1391,7 @@
             
             // 显示/隐藏强度控制（仅 shader effects 需要）
             const intensityControl = document.getElementById('intensity-control');
-            const shaderEffects = ['Electronic', 'Deep Meditation', 'Waves', 'Flare', 'Disintegrate'];
+            const shaderEffects = ['Waves', 'Disintegrate'];
             const isShaderEffect = shaderEffects.includes(effect);
             if (intensityControl) {
                 intensityControl.style.display = isShaderEffect ? 'block' : 'none';
@@ -1333,11 +1477,8 @@
                     options[5].text = '雨';
                     // Shader effects
                     if (options.length > 6) {
-                        options[6].text = '电子';
-                        options[7].text = '深度冥想';
-                        options[8].text = '波浪';
-                        options[9].text = '闪光';
-                        options[10].text = '分解';
+                        options[6].text = '波浪';
+                        options[7].text = '分解';
                     }
                 } else {
                     // Reveal effects
@@ -1349,11 +1490,8 @@
                     options[5].text = 'Rain';
                     // Shader effects
                     if (options.length > 6) {
-                        options[6].text = 'Electronic';
-                        options[7].text = 'Deep Meditation';
-                        options[8].text = 'Waves';
-                        options[9].text = 'Flare';
-                        options[10].text = 'Disintegrate';
+                        options[6].text = 'Waves';
+                        options[7].text = 'Disintegrate';
                     }
                 }
             }
@@ -1508,6 +1646,15 @@
             } else if (state.audiuno.usePhysiological && previousHR === 0 && hr > 0) {
                 // 首次收到心率数据，初始化心跳时间
                 state.audiuno.lastHeartbeatTime = state.baseTime;
+                
+                // 如果当前是"无效果"模式，需要重新创建 modifier 以应用心跳波浪
+                if (state.splatMesh && state.effectParams.effect === 'None') {
+                    console.log('首次收到心跳数据，在无效果模式下重新创建 modifier');
+                    setupSplatModifier(state.splatMesh, 'None');
+                    if (state.splatMesh.updateVersion) {
+                        state.splatMesh.updateVersion();
+                    }
+                }
             }
 
             // 将心率映射到效果参数
