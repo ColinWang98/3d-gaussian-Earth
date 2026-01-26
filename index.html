@@ -321,7 +321,9 @@
                 // 添加用户的问题
                 parts.push({ text: text });
 
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
+                // 尝试使用 gemini-1.5-flash 或 gemini-pro，因为 gemini-2.5-flash 可能不存在
+                let modelName = 'gemini-1.5-flash';
+                let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -330,12 +332,35 @@
                         ]
                     })
                 });
+                
+                // 如果失败，尝试使用 gemini-pro
+                if (!res.ok && res.status === 400) {
+                    console.warn('gemini-1.5-flash 失败，尝试 gemini-pro');
+                    modelName = 'gemini-pro';
+                    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [
+                                { role: 'user', parts: parts }
+                            ]
+                        })
+                    });
+                }
+                
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({}));
+                    console.error('Gemini API 错误:', res.status, errorData);
+                    throw new Error(`API 错误 ${res.status}: ${errorData.error?.message || res.statusText}`);
+                }
+                
                 const data = await res.json();
                 const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || '唔，我一时间有点想不到，等我再研究下先～';
                 addChatMessage('agent', reply);
             } catch (e) {
                 console.error('Gemini 调用失败:', e);
-                addChatMessage('agent', '唔，AI 那边连不上网络了，一阵再试试啦。');
+                const errorMsg = e.message || '未知错误';
+                addChatMessage('agent', `唔，AI 那边出问题了：${errorMsg}。请检查 API Key 是否正确，或者稍后再试。`);
             }
         }
 
@@ -640,11 +665,11 @@
                                         perpDir = vec3(0.0, 1.0, 0.0); // 如果粒子在摄像机正前方，使用垂直方向
                                     }
                                     
-                                    // 应用起伏效果：垂直于摄像机方向
-                                    pos += perpDir * waveIntensity * 0.4 * sin(distAlongCamera * 0.5 - timeSinceBeat * 8.0);
+                                    // 应用起伏效果：垂直于摄像机方向（增强强度）
+                                    pos += perpDir * waveIntensity * 0.8 * sin(distAlongCamera * 0.5 - timeSinceBeat * 8.0);
                                     
-                                    // 应用轻微的径向扩散（沿摄像机方向）
-                                    pos += cameraDir * waveIntensity * 0.1;
+                                    // 应用径向扩散（沿摄像机方向，增强强度）
+                                    pos += cameraDir * waveIntensity * 0.3;
                                     
                                     return pos;
                                 }
@@ -681,8 +706,13 @@
                                         float waveFront = timeSinceBeat * waveSpeed;
                                         
                                         // 计算波浪强度（距离波浪前沿越近，强度越大）
+                                        // 增加强度系数，使效果更明显
                                         float waveDist = abs(distAlongCamera - waveFront);
-                                        float waveIntensity = exp(-waveDist * 2.0) * (1.0 - timeSinceBeat / waveDuration);
+                                        float waveIntensity = exp(-waveDist * 1.5) * (1.0 - timeSinceBeat / waveDuration);
+                                        
+                                        // 应用强度倍数，使效果更明显（使用 intensity 参数）
+                                        float effectIntensity = ${inputs.intensity};
+                                        waveIntensity *= effectIntensity * 2.0; // 增强效果强度
                                         
                                         // 先应用心跳波浪效果（从摄像机近端到远端）
                                         localPos = heartbeatWave(localPos, t, heartbeatTime, cameraPos, cameraDir);
@@ -694,11 +724,11 @@
                                             perpDir = vec3(0.0, 1.0, 0.0);
                                         }
                                         
-                                        // 增加粒子扩散：垂直于摄像机方向扩散
-                                        localPos += perpDir * waveIntensity * 0.5;
+                                        // 增加粒子扩散：垂直于摄像机方向扩散（增强强度）
+                                        localPos += perpDir * waveIntensity * 1.5;
                                         
-                                        // 增加粒子尺寸（随波浪强度变化）
-                                        splatScales *= (1.0 + waveIntensity * 1.2);
+                                        // 增加粒子尺寸（随波浪强度变化，增强效果）
+                                        splatScales *= (1.0 + waveIntensity * 2.5);
                                     }
                                 }
                                 ${outputs.gsplat}.center = localPos;
