@@ -18,8 +18,8 @@
         #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
         #splat-viewer { position: absolute; inset: 0; background: transparent; z-index: 9999; display: none; }
         /* 确保 splat-viewer 本身不阻挡鼠标事件，只有子元素可以交互
-           允许返回按钮、效果控制面板、旋转按钮、语言切换按钮和聊天窗口接收鼠标事件 */
-        #splat-viewer > *:not(canvas):not(#close-splat):not(#chat-window):not(#effect-controls):not(#rotate-toggle):not(#view-lang-toggle) { pointer-events: none; }
+           允许返回按钮、效果控制面板、语言切换按钮和聊天窗口接收鼠标事件 */
+        #splat-viewer > *:not(canvas):not(#close-splat):not(#chat-window):not(#effect-controls):not(#view-lang-toggle) { pointer-events: none; }
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; }
         #effect-controls { position: absolute; top: 20px; left: 200px; z-index: 2100; background: var(--glass); border-radius: 15px; border: 1px solid #333; padding: 15px; min-width: 200px; pointer-events: auto; display: none; }
         #effect-controls label { color: white; font-size: 0.9em; display: block; margin-bottom: 8px; }
@@ -34,7 +34,6 @@
         #audiuno-toggle-row { margin-top: 8px; display: flex; align-items: center; gap: 8px; color: #ddd; font-size: 0.85em; }
         #audiuno-toggle-row input { width: auto; margin: 0; }
         #heart-rate-display { font-size: 0.9em; color: #00ff88; margin-top: 5px; }
-        #rotate-toggle { position: absolute; top: 20px; left: 420px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; display: none; }
         #view-lang-toggle { position: absolute; top: 20px; right: 360px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; display: none; }
         /* 为了确保 3D 画布可交互，聊天窗口不拦截鼠标事件 */
         #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: none; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
@@ -110,7 +109,6 @@
                 <div id="heart-rate-display" style="display: none;">心率: <span id="heart-rate-value">--</span> BPM</div>
             </div>
         </div>
-        <button id="rotate-toggle">⏸️ 暂停旋转</button>
         <button id="view-lang-toggle">EN / 中</button>
         <div id="chat-window">
             <div id="gemini-config-ui" style="padding:20px; text-align:center;">
@@ -168,7 +166,7 @@
         import { SparkControls, SplatMesh, dyno } from '@sparkjsdev/spark';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-        const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None', intensity: 0.8 }, animateT: null, baseTime: 0, effectStartTime: 0, isRotating: true, rotationAngle: 0, rotationSpeed: 0.3, modelCenter: null, audiuno: { port: null, reader: null, heartRate: 0, isConnected: false, usePhysiological: true, lastHeartbeatTime: 0, heartbeatTimes: [] }, isInitializing: false };
+            const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None', intensity: 0.8 }, animateT: null, baseTime: 0, effectStartTime: 0, modelCenter: null, audiuno: { port: null, reader: null, heartRate: 0, isConnected: false, usePhysiological: true, lastHeartbeatTime: 0, heartbeatTimes: [] }, isInitializing: false };
         let ACTIVE_GEMINI_KEY = localStorage.getItem('MY_GEMINI_KEY') || '';
         
         // DeepL 自动翻译函数
@@ -502,7 +500,7 @@
                 { gsplat: dyno.Gsplat },
                 ({ gsplat }) => {
                     const d = new dyno.Dyno({
-                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int", intensity: "float", heartbeatTime: "float", cameraPos: "vec3", cameraDir: "vec3" },
+                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int", intensity: "float", heartbeatTime: "float" },
                         outTypes: { gsplat: dyno.Gsplat },
                         globals: () => [
                             dyno.unindent(`
@@ -634,42 +632,29 @@
                                     return vec4(mix(pos, p, tt), tt);
                                 }
 
-                                // 心跳波浪效果：从摄像机近端向远端传播的波浪
-                                vec3 heartbeatWave(vec3 pos, float t, float heartbeatTime, vec3 cameraPos, vec3 cameraDir) {
+                                // 心跳波浪效果：从模型中心向外传播的波浪
+                                vec3 heartbeatWave(vec3 pos, float t, float heartbeatTime) {
                                     if (heartbeatTime <= 0.0) return pos;
                                     
                                     // 计算从上次心跳到现在的时间
                                     float timeSinceBeat = t - heartbeatTime;
                                     
-                                    // 波浪持续时间（约 1.5 秒，确保完整刷新）
-                                    float waveDuration = 1.5;
+                                    // 波浪持续时间（约 1 秒）
+                                    float waveDuration = 1.0;
                                     if (timeSinceBeat < 0.0 || timeSinceBeat > waveDuration) return pos;
                                     
-                                    // 计算粒子相对于摄像机的位置
-                                    vec3 toParticle = pos - cameraPos;
-                                    
-                                    // 计算粒子沿摄像机朝向的距离（从近端到远端）
-                                    float distAlongCamera = dot(toParticle, cameraDir);
-                                    
-                                    // 波浪传播速度（从近端向远端）
-                                    float waveSpeed = 8.0;
-                                    float waveFront = timeSinceBeat * waveSpeed;
+                                    // 计算到模型中心的距离
+                                    float dist = length(pos);
                                     
                                     // 计算波浪强度（距离波浪前沿越近，强度越大）
-                                    float waveDist = abs(distAlongCamera - waveFront);
-                                    float waveIntensity = exp(-waveDist * 2.0) * (1.0 - timeSinceBeat / waveDuration);
+                                    float waveSpeed = 4.0;
+                                    float waveFront = timeSinceBeat * waveSpeed;
+                                    float waveDist = abs(dist - waveFront);
+                                    float waveIntensity = exp(-waveDist * 2.5) * (1.0 - timeSinceBeat / waveDuration);
                                     
-                                    // 计算垂直于摄像机方向的向量（用于起伏）
-                                    vec3 perpDir = normalize(toParticle - cameraDir * distAlongCamera);
-                                    if (length(perpDir) < 0.001) {
-                                        perpDir = vec3(0.0, 1.0, 0.0); // 如果粒子在摄像机正前方，使用垂直方向
-                                    }
-                                    
-                                    // 应用起伏效果：垂直于摄像机方向（增强强度）
-                                    pos += perpDir * waveIntensity * 0.8 * sin(distAlongCamera * 0.5 - timeSinceBeat * 8.0);
-                                    
-                                    // 应用径向扩散（沿摄像机方向，增强强度）
-                                    pos += cameraDir * waveIntensity * 0.3;
+                                    // 应用径向起伏
+                                    vec3 dir = normalize(pos);
+                                    pos += dir * waveIntensity * 0.5;
                                     
                                     return pos;
                                 }
@@ -683,61 +668,70 @@
                             vec4 splatColor = ${inputs.gsplat}.rgba;
                             float t = ${inputs.t};
                             float heartbeatTime = ${inputs.heartbeatTime};
-                            vec3 cameraPos = ${inputs.cameraPos};
-                            vec3 cameraDir = ${inputs.cameraDir};
                             float l = length(localPos.xz);
                             int effectType = int(${inputs.effectType});
                             
-                            // 无效果模式（effectType == 0）：只在有心跳数据时应用心跳波浪和粒子化扩散
+                            // 无效果模式（effectType == 0）：只在有心跳数据时应用类似 Magic 效果的径向展开
                             if (effectType == 0) {
                                 if (heartbeatTime > 0.0) {
                                     // 计算从上次心跳到现在的时间
                                     float timeSinceBeat = t - heartbeatTime;
-                                    float waveDuration = 1.5;
+                                    float waveDuration = 2.0; // 心跳效果持续时间
                                     
                                     // 只在波浪持续时间内应用效果（每次心跳完整刷新）
                                     if (timeSinceBeat >= 0.0 && timeSinceBeat <= waveDuration) {
-                                        // 计算粒子相对于摄像机的位置
-                                        vec3 toParticle = localPos - cameraPos;
-                                        float distAlongCamera = dot(toParticle, cameraDir);
+                                        // 使用类似 Magic 效果的径向展开逻辑
+                                        // s: 从中心向外展开的半径，基于心跳时间
+                                        // 心跳效果：从 0 开始，在 waveDuration 内展开到最大半径
+                                        float maxRadius = 10.0;
+                                        float s = smoothstep(0.0, waveDuration, timeSinceBeat) * maxRadius;
                                         
-                                        // 波浪传播速度（从近端向远端）
-                                        float waveSpeed = 8.0;
-                                        float waveFront = timeSinceBeat * waveSpeed;
+                                        // l: 粒子到中心的径向距离（XZ 平面）
+                                        float l = length(localPos.xz);
                                         
-                                        // 计算波浪强度（距离波浪前沿越近，强度越大）
-                                        // 增加强度系数，使效果更明显
-                                        float waveDist = abs(distAlongCamera - waveFront);
-                                        float waveIntensity = exp(-waveDist * 1.5) * (1.0 - timeSinceBeat / waveDuration);
+                                        // border: 波浪前沿的距离
+                                        float border = abs(s - l - 0.5);
                                         
-                                        // 应用强度倍数，使效果更明显（使用 intensity 参数）
+                                        // 应用径向缩放（类似 Magic 效果）
+                                        localPos *= 1.0 - 0.2 * exp(-20.0 * border);
+                                        
+                                        // 应用噪声效果（类似 Magic 效果）
+                                        vec3 noiseOffset = noise(localPos.xyz * 2.0 + vec3(timeSinceBeat * 0.5)) * smoothstep(s - 0.5, s, l + 0.5);
+                                        localPos += 0.1 * noiseOffset;
+                                        
+                                        // 应用粒子尺寸变化（类似 Magic 效果）
+                                        vec3 finalScales = mix(splatScales, vec3(0.002), smoothstep(s - 0.5, s, l + 0.5));
+                                        
+                                        // 角度展开效果（类似 Magic 效果）
+                                        float at = atan(localPos.x, localPos.z) / 3.1416;
+                                        float angleReveal = step(at, timeSinceBeat - 3.1416);
+                                        
+                                        // 应用发光效果（类似 Magic 效果）
+                                        float glow = exp(-20.0 * border) + exp(-50.0 * abs(timeSinceBeat - at - 3.1416)) * 0.5;
+                                        
+                                        // 使用 intensity 参数调整效果强度
                                         float effectIntensity = ${inputs.intensity};
-                                        waveIntensity *= effectIntensity * 2.0; // 增强效果强度
                                         
-                                        // 先应用心跳波浪效果（从摄像机近端到远端）
-                                        localPos = heartbeatWave(localPos, t, heartbeatTime, cameraPos, cameraDir);
-                                        
-                                        // 应用粒子化扩散效果：根据心跳波浪增加粒子尺寸和扩散
-                                        // 计算垂直于摄像机方向的向量
-                                        vec3 perpDir = normalize(toParticle - cameraDir * distAlongCamera);
-                                        if (length(perpDir) < 0.001) {
-                                            perpDir = vec3(0.0, 1.0, 0.0);
-                                        }
-                                        
-                                        // 增加粒子扩散：垂直于摄像机方向扩散（增强强度）
-                                        localPos += perpDir * waveIntensity * 1.5;
-                                        
-                                        // 增加粒子尺寸（随波浪强度变化，增强效果）
-                                        splatScales *= (1.0 + waveIntensity * 2.5);
+                                        // 更新输出
+                                        ${outputs.gsplat}.center = localPos;
+                                        ${outputs.gsplat}.scales = mix(splatScales, finalScales, effectIntensity);
+                                        ${outputs.gsplat}.rgba = splatColor * angleReveal + vec4(glow * effectIntensity, glow * effectIntensity, glow * effectIntensity, 0.0);
+                                    } else {
+                                        // 心跳效果结束后，恢复原始状态
+                                        ${outputs.gsplat}.center = localPos;
+                                        ${outputs.gsplat}.scales = splatScales;
+                                        ${outputs.gsplat}.rgba = splatColor;
                                     }
+                                } else {
+                                    // 没有心跳数据时，保持原样
+                                    ${outputs.gsplat}.center = localPos;
+                                    ${outputs.gsplat}.scales = splatScales;
+                                    ${outputs.gsplat}.rgba = splatColor;
                                 }
-                                ${outputs.gsplat}.center = localPos;
-                                ${outputs.gsplat}.scales = splatScales;
-                                ${outputs.gsplat}.rgba = splatColor;
                             }
                             // 应用心跳波浪效果（如果启用了生理信号且不是无效果模式）
                             else if (heartbeatTime > 0.0) {
-                                localPos = heartbeatWave(localPos, t, heartbeatTime, cameraPos, cameraDir);
+                                localPos = heartbeatWave(localPos, t, heartbeatTime);
                             }
                             
                             if (effectType == 1) {
@@ -821,24 +815,12 @@
                         heartbeatTime = state.audiuno.lastHeartbeatTime - state.effectStartTime;
                     }
                     
-                    // 获取摄像机位置和方向
-                    let cameraPos = new THREE.Vector3(0, 0, 5);
-                    let cameraDir = new THREE.Vector3(0, 0, -1);
-                    if (state.camera) {
-                        cameraPos = state.camera.position.clone();
-                        cameraDir = new THREE.Vector3();
-                        state.camera.getWorldDirection(cameraDir);
-                    }
-                    
-                    // 传递 vec3 作为数组 [x, y, z]
                     gsplat = d.apply({ 
                         gsplat, 
                         t: state.animateT,
                         effectType: dyno.dynoInt(effectInt),
                         intensity: dyno.dynoFloat(state.effectParams.intensity || 0.8),
-                        heartbeatTime: dyno.dynoFloat(heartbeatTime),
-                        cameraPos: [cameraPos.x, cameraPos.y, cameraPos.z],
-                        cameraDir: [cameraDir.x, cameraDir.y, cameraDir.z]
+                        heartbeatTime: dyno.dynoFloat(heartbeatTime)
                     }).gsplat;
                     
                     return { gsplat };
@@ -991,13 +973,6 @@
                     }
                 }
                 
-                // 显示旋转控制按钮
-                const rotateToggle = document.getElementById('rotate-toggle');
-                if (rotateToggle) {
-                    rotateToggle.style.display = 'block';
-                    rotateToggle.innerText = state.isRotating ? '⏸️ 暂停旋转' : '▶️ 继续旋转';
-                }
-                
                 // 显示语言切换按钮
                 const viewLangToggle = document.getElementById('view-lang-toggle');
                 if (viewLangToggle) {
@@ -1124,10 +1099,6 @@
                     console.log('相机位置:', state.camera.position, '距离:', cameraDistance);
                 }
                 
-                // 重置旋转状态
-                state.rotationAngle = 0;
-                state.isRotating = true;
-
                 // 隐藏加载提示
                 loader.style.display = 'none';
                 loader.style.pointerEvents = 'none';
@@ -1163,25 +1134,6 @@
                         }
                         
                         state.animateT.value = effectTime;
-                    }
-                    
-                    // 自动旋转模型（绕Y轴）
-                    if (state.splatMesh && state.isRotating) {
-                        let rotationSpeed = state.rotationSpeed;
-                        
-                        // 如果使用生理信号，根据心率调整旋转速度
-                        if (state.audiuno.usePhysiological && state.audiuno.heartRate > 0) {
-                            // 心率映射到旋转速度：60 BPM -> 0.2x, 100 BPM -> 0.4x
-                            const speedMultiplier = 0.2 + ((state.audiuno.heartRate - 60) / 40) * 0.2;
-                            rotationSpeed = state.rotationSpeed * speedMultiplier;
-                        }
-                        
-                        state.rotationAngle += rotationSpeed * deltaTime;
-                        state.splatMesh.rotation.y = (state.rotationAngle * Math.PI) / 180; // 转换为弧度
-                        // 仅在自动旋转时保持相机看向模型中心（不影响用户手动控制）
-                        if (state.camera && state.modelCenter) {
-                            state.camera.lookAt(state.modelCenter);
-                        }
                     }
                     
                     // 更新 splat 渲染
@@ -1376,11 +1328,6 @@
             if (effectControls) {
                 effectControls.style.display = 'none';
             }
-            const rotateToggle = document.getElementById('rotate-toggle');
-            if (rotateToggle) {
-                rotateToggle.style.display = 'none';
-            }
-            
             // 清理资源
             if (state.renderer) {
                 state.renderer.setAnimationLoop(null);
@@ -1506,15 +1453,6 @@
             }
         });
 
-        // 旋转控制按钮
-        document.getElementById('rotate-toggle').addEventListener('click', () => {
-            state.isRotating = !state.isRotating;
-            const rotateToggle = document.getElementById('rotate-toggle');
-            if (rotateToggle) {
-                rotateToggle.innerText = state.isRotating ? '⏸️ 暂停旋转' : '▶️ 继续旋转';
-            }
-        });
-
         // 3D视图语言切换按钮
         document.getElementById('view-lang-toggle').addEventListener('click', () => {
             state.lang = state.lang === 'cn' ? 'en' : 'cn';
@@ -1559,15 +1497,6 @@
                         options[6].text = 'Waves';
                         options[7].text = 'Disintegrate';
                     }
-                }
-            }
-            // 更新旋转按钮文本
-            const rotateToggle = document.getElementById('rotate-toggle');
-            if (rotateToggle) {
-                if (state.lang === 'cn') {
-                    rotateToggle.innerText = state.isRotating ? '⏸️ 暂停旋转' : '▶️ 继续旋转';
-                } else {
-                    rotateToggle.innerText = state.isRotating ? '⏸️ Pause Rotation' : '▶️ Resume Rotation';
                 }
             }
             // 更新返回按钮文本
