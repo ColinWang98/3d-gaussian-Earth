@@ -349,9 +349,9 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 // 添加用户的问题
                 parts.push({ text: text });
 
-                // 使用 gemini-pro 作为默认模型（最稳定的选择）
+                // 使用 gemini-1.5-flash 作为默认模型（推荐用于快速响应）
                 // 如果失败，尝试其他可用的模型
-                let modelName = 'gemini-pro';
+                let modelName = 'gemini-1.5-flash';
                 let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -362,10 +362,10 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                     })
                 });
                 
-                // 如果失败，尝试 gemini-1.5-pro-latest
+                // 如果失败，尝试 gemini-1.5-pro
                 if (!res.ok && (res.status === 400 || res.status === 404)) {
-                    console.warn('gemini-pro 失败，尝试 gemini-1.5-pro-latest');
-                    modelName = 'gemini-1.5-pro-latest';
+                    console.warn('gemini-1.5-flash 失败，尝试 gemini-1.5-pro');
+                    modelName = 'gemini-1.5-pro';
                     res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -377,10 +377,10 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                     });
                 }
                 
-                // 如果还是失败，尝试 gemini-1.5-flash-latest
+                // 如果还是失败，尝试 gemini-pro (旧版本，可能已弃用)
                 if (!res.ok && (res.status === 400 || res.status === 404)) {
-                    console.warn('gemini-1.5-pro-latest 失败，尝试 gemini-1.5-flash-latest');
-                    modelName = 'gemini-1.5-flash-latest';
+                    console.warn('gemini-1.5-pro 失败，尝试 gemini-pro');
+                    modelName = 'gemini-pro';
                     res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -845,63 +845,84 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                             // Shader effects (10-14)
                             else if (effectType == 12) {
                                 // Waves Effect with heartbeat rhythm
-                                // 计算心跳律动影响：叠加所有活跃的心跳效果
-                                float heartbeatModulation = 0.0;
+                                // 计算心跳律动影响：叠加所有活跃的心跳效果，影响波的频率和相位
+                                float frequencyMod = 0.0; // 频率调制
+                                float phaseMod = 0.0; // 相位调制
                                 
                                 // 处理每个心跳（最多 3 个）
                                 float[] beats = float[](heartbeatTime1, heartbeatTime2, heartbeatTime3);
                                 for (int i = 0; i < 3; i++) {
                                     if (beats[i] > 0.0) {
                                         float timeSinceBeat = t - beats[i];
-                                        float beatDuration = 1.5; // 每次心跳效果持续时间
+                                        float beatDuration = 2.0; // 每次心跳效果持续时间（更长，更平滑）
                                         if (timeSinceBeat >= 0.0 && timeSinceBeat <= beatDuration) {
-                                            // 每次心跳产生不同的峰值（基于心跳索引）
-                                            float peakVariation = 0.5 + 0.5 * sin(float(i) * 2.094); // 0.5-1.0 之间变化
-                                            // 平滑的心跳脉冲：快速上升，缓慢下降
-                                            float pulse = exp(-timeSinceBeat * 3.0) * peakVariation;
-                                            heartbeatModulation += pulse;
+                                            // 平滑过渡：使用 smoothstep 实现更平滑的衰减
+                                            float normalizedTime = timeSinceBeat / beatDuration;
+                                            float smoothPulse = (1.0 - smoothstep(0.0, 1.0, normalizedTime));
+                                            
+                                            // 每次心跳产生不同的峰值和相位偏移（基于心跳索引）
+                                            float peakVariation = 0.3 + 0.7 * sin(float(i) * 2.094); // 0.3-1.0 之间变化
+                                            float phaseOffset = float(i) * 1.047; // 每次心跳相位偏移不同
+                                            
+                                            // 频率调制：心跳时波速加快
+                                            frequencyMod += smoothPulse * peakVariation * 0.8;
+                                            // 相位调制：每次心跳产生不同的相位偏移
+                                            phaseMod += smoothPulse * sin(phaseOffset) * 2.0;
                                         }
                                     }
                                 }
-                                // 限制叠加值，避免过强
-                                heartbeatModulation = min(heartbeatModulation, 1.5);
+                                // 限制叠加值
+                                frequencyMod = min(frequencyMod, 1.2);
                                 
-                                // 将心跳律动应用到效果（不是调整强度，而是影响效果本身）
-                                float modulatedT = t + heartbeatModulation * 0.5; // 心跳加速时间，产生不同的峰值
+                                // 将心跳律动应用到效果：影响波的频率和相位，而不是强度
+                                // 心跳时频率增加，产生更快的波动
+                                float modulatedT = t * (1.0 + frequencyMod * 0.6) + phaseMod;
                                 vec4 effect = sin3D(localPos, modulatedT);
-                                // 保持原始 intensity，但让心跳律动影响效果的参数
+                                
+                                // 保持原始 intensity，心跳只影响效果参数
                                 ${outputs.gsplat}.rgba.rgba = mix(splatColor, splatColor*effect, ${inputs.intensity});
                                 vec3 pos = localPos;
                                 pos.y += 1.;
-                                // 心跳律动影响位置变化
-                                pos *= (1. + effect.x * .05 * ${inputs.intensity} * (1.0 + heartbeatModulation * 0.2));
+                                // 心跳律动影响位置变化（通过 effect 本身，而不是调整 intensity）
+                                pos *= (1. + effect.x * .05 * ${inputs.intensity});
                                 pos.y -= 1.;
                                 ${outputs.gsplat}.center = pos;
                             } 
                             else if (effectType == 14) {
                                 // Disintegrate Effect with heartbeat rhythm
-                                // 计算心跳律动影响：叠加所有活跃的心跳效果
-                                float heartbeatModulation = 0.0;
+                                // 计算心跳律动影响：叠加所有活跃的心跳效果，影响分解的速度和相位
+                                float speedMod = 0.0; // 速度调制
+                                float phaseMod = 0.0; // 相位调制
                                 
                                 float[] beats = float[](heartbeatTime1, heartbeatTime2, heartbeatTime3);
                                 for (int i = 0; i < 3; i++) {
                                     if (beats[i] > 0.0) {
                                         float timeSinceBeat = t - beats[i];
-                                        float beatDuration = 1.5;
+                                        float beatDuration = 2.0; // 每次心跳效果持续时间（更长，更平滑）
                                         if (timeSinceBeat >= 0.0 && timeSinceBeat <= beatDuration) {
-                                            // 每次心跳产生不同的峰值
-                                            float peakVariation = 0.5 + 0.5 * sin(float(i) * 2.094);
-                                            float pulse = exp(-timeSinceBeat * 3.0) * peakVariation;
-                                            heartbeatModulation += pulse;
+                                            // 平滑过渡：使用 smoothstep 实现更平滑的衰减
+                                            float normalizedTime = timeSinceBeat / beatDuration;
+                                            float smoothPulse = (1.0 - smoothstep(0.0, 1.0, normalizedTime));
+                                            
+                                            // 每次心跳产生不同的峰值和相位偏移（基于心跳索引）
+                                            float peakVariation = 0.3 + 0.7 * sin(float(i) * 2.094); // 0.3-1.0 之间变化
+                                            float phaseOffset = float(i) * 1.047; // 每次心跳相位偏移不同
+                                            
+                                            // 速度调制：心跳时分解速度加快
+                                            speedMod += smoothPulse * peakVariation * 0.6;
+                                            // 相位调制：每次心跳产生不同的相位偏移
+                                            phaseMod += smoothPulse * sin(phaseOffset) * 1.5;
                                         }
                                     }
                                 }
-                                heartbeatModulation = min(heartbeatModulation, 1.5);
+                                // 限制叠加值
+                                speedMod = min(speedMod, 1.0);
                                 
-                                // 将心跳律动应用到效果（影响分解的速度和强度）
-                                float modulatedT = t + heartbeatModulation * 0.3; // 心跳影响时间参数
-                                // 保持原始 intensity，但让心跳律动影响分解效果
-                                vec4 e = disintegrate(localPos, modulatedT, ${inputs.intensity} * (1.0 + heartbeatModulation * 0.2));
+                                // 将心跳律动应用到效果：影响分解的速度和相位，而不是强度
+                                // 心跳时分解速度增加，产生不同的峰值
+                                float modulatedT = t * (1.0 + speedMod * 0.5) + phaseMod;
+                                // 保持原始 intensity，心跳只影响效果参数（速度、相位）
+                                vec4 e = disintegrate(localPos, modulatedT, ${inputs.intensity});
                                 ${outputs.gsplat}.center = e.xyz;
                                 ${outputs.gsplat}.scales = mix(vec3(.01, .01, .01), ${inputs.gsplat}.scales, e.w);
                             }
