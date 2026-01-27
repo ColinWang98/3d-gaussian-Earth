@@ -231,7 +231,41 @@
         import { SparkControls, SplatMesh, dyno } from '@sparkjsdev/spark';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-            const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None', intensity: 0.8 }, animateT: null, baseTime: 0, effectStartTime: 0, modelCenter: null, audiuno: { port: null, reader: null, heartRate: 0, isConnected: false, usePhysiological: true, lastHeartbeatTime: 0, heartbeatTimes: [], heartbeatPeaks: [] }, isInitializing: false, isChatOpen: false };
+            const state = { 
+                locations: [], 
+                currentLoc: null, 
+                lang: 'cn', 
+                scene: null, 
+                camera: null, 
+                renderer: null, 
+                controls: null, 
+                splatMesh: null, 
+                animationId: null, 
+                resizeHandler: null, 
+                isPicking: false, 
+                selectedCoords: null, 
+                deeplKey: localStorage.getItem('DEEPL_KEY') || '', 
+                effectParams: { effect: 'None', intensity: 0.8 }, 
+                animateT: null, 
+                baseTime: 0, 
+                effectStartTime: 0, 
+                modelCenter: null, 
+                audiuno: { 
+                    port: null, 
+                    reader: null, 
+                    heartRate: 0, 
+                    isConnected: false, 
+                    usePhysiological: true, 
+                    lastHeartbeatTime: 0, 
+                    heartbeatTimes: [], 
+                    heartbeatPeaks: [] 
+                }, 
+                isInitializing: false, 
+                isChatOpen: false,
+                isParticleMode: false,
+                viewerKeyHandler: null,
+                prevEffectForParticle: null
+            };
         let ACTIVE_GEMINI_KEY = localStorage.getItem('MY_GEMINI_KEY') || '';
         
         // DeepL 自动翻译函数
@@ -543,7 +577,6 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
 
         // 1. 初始化地图 [web:13]
         const map = L.map('map-background', { center: [22.3193, 114.1694], zoom: 13, zoomControl: false });
-        
         // 地图样式配置
         const mapStyles = {
             dark: {
@@ -1440,6 +1473,20 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 // 初始化完成，重置标志
                 state.isInitializing = false;
 
+                // 注册 viewer 键盘监听：F 键切换粒子形态
+                state.viewerKeyHandler = (e) => {
+                    // 确保聊天输入框不会触发 viewer 快捷键
+                    if (e.target && (e.target.id === 'chat-input' || e.target.closest && e.target.closest('#chat-window'))) {
+                        return;
+                    }
+                    if (e.key === 'f' || e.key === 'F') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleParticleMode();
+                    }
+                };
+                document.addEventListener('keydown', state.viewerKeyHandler, true);
+
             } catch (err) {
                 console.error('加载模型失败:', err);
                 loader.innerText = '❌ 加载失败: ' + (err.message || '请检查模型文件');
@@ -1631,6 +1678,14 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 state.scene = null;
             }
             state.camera = null;
+
+            // 移除 viewer 键盘监听
+            if (state.viewerKeyHandler) {
+                document.removeEventListener('keydown', state.viewerKeyHandler, true);
+                state.viewerKeyHandler = null;
+            }
+            state.isParticleMode = false;
+            state.prevEffectForParticle = null;
         };
 
         document.getElementById('save-key-btn').onclick = () => {
@@ -1748,6 +1803,37 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 console.warn('切换效果时 splatMesh 不存在');
             }
         });
+
+        // F 键切换粒子形态（在 3D viewer 中）
+        function toggleParticleMode() {
+            if (!state.splatMesh) return;
+
+            if (!state.isParticleMode) {
+                // 进入粒子形态：记住之前的效果，切到分解效果
+                state.prevEffectForParticle = state.effectParams.effect || 'None';
+                state.effectParams.effect = 'Disintegrate';
+                state.effectParams.intensity = 1.0;
+                if (state.splatMesh) {
+                    setupSplatModifier(state.splatMesh, state.effectParams.effect);
+                    if (state.splatMesh.updateVersion) {
+                        state.splatMesh.updateVersion();
+                    }
+                }
+                state.isParticleMode = true;
+                console.log('粒子形态：开启 (Disintegrate)');
+            } else {
+                // 退出粒子形态：恢复之前的效果
+                state.effectParams.effect = state.prevEffectForParticle || 'None';
+                state.isParticleMode = false;
+                if (state.splatMesh) {
+                    setupSplatModifier(state.splatMesh, state.effectParams.effect);
+                    if (state.splatMesh.updateVersion) {
+                        state.splatMesh.updateVersion();
+                    }
+                }
+                console.log('粒子形态：关闭，恢复效果:', state.effectParams.effect);
+            }
+        }
 
         // 强度滑块控制
         const intensitySlider = document.getElementById('intensity-slider');
