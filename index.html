@@ -211,7 +211,6 @@
         <div class="modal-box">
             <h3 style="margin:0 0 15px 0">创建重建任务</h3>
             <input type="password" id="hf-token" placeholder="Hugging Face Write Token">
-            <input type="password" id="deepl-key" placeholder="DeepL API Key (可选，用于自动翻译)">
             <input type="text" id="loc-name" placeholder="地点名称 (中文)">
             <input type="text" id="loc-name-en" placeholder="Location Name (English，留空将自动翻译)">
             <div style="display:flex; gap:8px;">
@@ -262,6 +261,70 @@
         function updateLangUI() {
             const langBtn = document.getElementById('lang-toggle');
             if (langBtn) langBtn.innerText = state.lang === 'cn' ? 'EN / 中' : '中 / EN';
+
+            // 顶部/地图相关按钮
+            const uploadBtn = document.getElementById('upload-btn');
+            if (uploadBtn) uploadBtn.innerText = state.lang === 'cn' ? '+ 新增任务' : '+ New Task';
+
+            const delBtn = document.getElementById('del-btn');
+            if (delBtn) delBtn.innerText = state.lang === 'cn' ? '删除' : 'Delete';
+
+            const enterBtn = document.getElementById('enter-btn');
+            if (enterBtn) enterBtn.innerText = state.lang === 'cn' ? '全息查看' : 'Enter 3D View';
+
+            // 创建任务弹窗内按钮与标题
+            const modalTitle = document.querySelector('#modal-overlay .modal-box h3');
+            if (modalTitle) modalTitle.innerText = state.lang === 'cn' ? '创建重建任务' : 'Create Reconstruction Task';
+
+            const pickBtn = document.getElementById('pick-btn');
+            if (pickBtn) pickBtn.innerText = state.lang === 'cn' ? '拾取' : 'Pick';
+
+            const submitBtn = document.getElementById('submit-btn');
+            if (submitBtn) submitBtn.innerText = state.lang === 'cn' ? '上传任务' : 'Upload Task';
+
+            const cancelBtn = document.querySelector('#modal-overlay button[onclick]');
+            if (cancelBtn) cancelBtn.innerText = state.lang === 'cn' ? '取消' : 'Cancel';
+
+            // 3D 视图相关按钮
+            const closeSplat = document.getElementById('close-splat');
+            if (closeSplat) closeSplat.innerText = state.lang === 'cn' ? '← 返回地图' : '← Back to Map';
+
+            const resetTimeBtn = document.getElementById('reset-time-btn');
+            if (resetTimeBtn) resetTimeBtn.innerText = state.lang === 'cn' ? '🔄 重置时间' : '🔄 Reset Time';
+
+            const connectAudiunoBtn = document.getElementById('connect-audiuno-btn');
+            if (connectAudiunoBtn && !state.audiuno.isConnected) {
+                connectAudiunoBtn.textContent = state.lang === 'cn' ? '🔌 连接 Audiuno' : '🔌 Connect Audiuno';
+            }
+
+            const useHeartbeatLabel = document.getElementById('use-heartbeat-label');
+            if (useHeartbeatLabel) useHeartbeatLabel.innerText = state.lang === 'cn' ? '接受心跳数据' : 'Use heartbeat data';
+
+            const chatToggleBtn = document.getElementById('chat-toggle-btn');
+            if (chatToggleBtn) chatToggleBtn.innerText = state.lang === 'cn' ? 'AI 聊天' : 'AI Chat';
+
+            const chatSendBtn = document.getElementById('chat-send');
+            if (chatSendBtn) chatSendBtn.innerText = state.lang === 'cn' ? '发送' : 'Send';
+
+            // Gemini 配置区域按钮与提示
+            const geminiTitle = document.querySelector('#gemini-config-ui p');
+            if (geminiTitle) {
+                geminiTitle.innerText = state.lang === 'cn'
+                    ? '👤 激活 AI 导览员'
+                    : '👤 Activate AI Guide';
+            }
+            const geminiInput = document.getElementById('user-gemini-key');
+            if (geminiInput) {
+                geminiInput.placeholder = state.lang === 'cn'
+                    ? 'Gemini API Key...'
+                    : 'Gemini API Key...';
+            }
+            const geminiBtn = document.getElementById('save-key-btn');
+            if (geminiBtn) {
+                geminiBtn.innerText = state.lang === 'cn'
+                    ? '开启 AI 对话'
+                    : 'Start AI Chat';
+            }
 
             // 根据语言切换当前地点标题和描述（如果有英文字段）
             if (state.currentLoc) {
@@ -441,7 +504,7 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                     modelName = modelCandidates[i];
                     console.warn('尝试调用 Gemini 模型:', modelName);
                     res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
-                        method: 'POST',
+                    method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             contents: [
@@ -1410,13 +1473,6 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
             } catch (e) { alert("删除失败，请检查权限。"); }
         };
 
-        // 保存 DeepL Key
-        document.getElementById('deepl-key').value = state.deeplKey;
-        document.getElementById('deepl-key').addEventListener('change', (e) => {
-            state.deeplKey = e.target.value.trim();
-            localStorage.setItem('DEEPL_KEY', state.deeplKey);
-        });
-        
         // 自动翻译：当输入中文描述时，自动翻译为英文（保存到 state 中）
         let autoTranslatedDescEn = '';
         document.getElementById('desc-input').addEventListener('input', async (e) => {
@@ -1788,8 +1844,8 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 // 是否接受心跳数据由 UI 开关决定
 
                 // 更新 UI
-                document.getElementById('audiuno-status').textContent = '已连接';
-                document.getElementById('connect-audiuno-btn').textContent = '断开连接';
+                document.getElementById('audiuno-status').textContent = state.lang === 'cn' ? '已连接' : 'Connected';
+                document.getElementById('connect-audiuno-btn').textContent = state.lang === 'cn' ? '断开连接' : 'Disconnect';
                 document.getElementById('heart-rate-display').style.display = 'block';
                 const hbToggle = document.getElementById('use-heartbeat-toggle');
                 if (hbToggle) state.audiuno.usePhysiological = !!hbToggle.checked;
@@ -1819,8 +1875,8 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
             state.audiuno.lastHeartbeatTime = 0;
 
             // 更新 UI
-            document.getElementById('audiuno-status').textContent = '未连接';
-            document.getElementById('connect-audiuno-btn').textContent = '🔌 连接 Audiuno';
+            document.getElementById('audiuno-status').textContent = state.lang === 'cn' ? '未连接' : 'Disconnected';
+            document.getElementById('connect-audiuno-btn').textContent = state.lang === 'cn' ? '🔌 连接 Audiuno' : '🔌 Connect Audiuno';
             document.getElementById('heart-rate-display').style.display = 'none';
             document.getElementById('heart-rate-value').textContent = '--';
         }
