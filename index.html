@@ -432,23 +432,14 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 // 添加用户的问题
                 parts.push({ text: text });
 
-                // 使用 gemini-1.5-flash 作为默认模型（推荐用于快速响应）
-                // 如果失败，尝试其他可用的模型
-                let modelName = 'gemini-1.5-flash';
-                let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [
-                            { role: 'user', parts: parts }
-                        ]
-                    })
-                });
-                
-                // 如果失败，尝试 gemini-1.5-pro
-                if (!res.ok && (res.status === 400 || res.status === 404)) {
-                    console.warn('gemini-1.5-flash 失败，尝试 gemini-1.5-pro');
-                    modelName = 'gemini-1.5-pro';
+                // 依次尝试多个模型（参考 Gemini 官方文档 https://ai.google.dev/gemini-api/docs）
+                // 优先使用最新的 flash 预览模型，其次回退到 1.5 代模型
+                const modelCandidates = ['gemini-3-flash-preview', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+                let res = null;
+                let modelName = '';
+                for (let i = 0; i < modelCandidates.length; i++) {
+                    modelName = modelCandidates[i];
+                    console.warn('尝试调用 Gemini 模型:', modelName);
                     res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -458,21 +449,9 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                             ]
                         })
                     });
-                }
-                
-                // 如果还是失败，尝试 gemini-pro (旧版本，可能已弃用)
-                if (!res.ok && (res.status === 400 || res.status === 404)) {
-                    console.warn('gemini-1.5-pro 失败，尝试 gemini-pro');
-                    modelName = 'gemini-pro';
-                    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [
-                                { role: 'user', parts: parts }
-                            ]
-                        })
-                    });
+                    if (res.ok) break;
+                    // 只在 400/404 时降级到下一个模型，其它错误直接抛出
+                    if (!(res.status === 400 || res.status === 404)) break;
                 }
                 
                 if (!res.ok) {
