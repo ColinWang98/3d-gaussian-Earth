@@ -19,7 +19,7 @@
         #splat-viewer { position: absolute; inset: 0; background: transparent; z-index: 9999; display: none; }
         /* 确保 splat-viewer 本身不阻挡鼠标事件，只有子元素可以交互
            允许返回按钮、效果控制面板、语言切换按钮和聊天窗口接收鼠标事件 */
-        #splat-viewer > *:not(canvas):not(#close-splat):not(#chat-window):not(#effect-controls):not(#view-lang-toggle) { pointer-events: none; }
+        #splat-viewer > *:not(canvas):not(#close-splat):not(#chat-window):not(#effect-controls):not(#view-lang-toggle):not(#chat-toggle-btn) { pointer-events: none; }
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; }
         #effect-controls { position: absolute; top: 20px; left: 200px; z-index: 2100; background: var(--glass); border-radius: 15px; border: 1px solid #333; padding: 15px; min-width: 200px; pointer-events: auto; display: none; }
         #effect-controls label { color: white; font-size: 0.9em; display: block; margin-bottom: 8px; }
@@ -36,7 +36,7 @@
         #heart-rate-display { font-size: 0.9em; color: #00ff88; margin-top: 5px; }
         #view-lang-toggle { position: absolute; top: 20px; right: 360px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; display: none; }
         /* 为了确保 3D 画布可交互，聊天窗口不拦截鼠标事件 */
-        #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: none; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
+        #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; max-height: 70vh; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: none; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
         #chat-msgs { flex: 1; padding: 12px; overflow-y: auto; font-size: 0.85em; color: #eee; display: flex; flex-direction: column; gap: 10px; }
         .msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; }
         .msg-agent { background: var(--accent); align-self: flex-start; }
@@ -65,6 +65,71 @@
         }
         /* 确保所有 canvas 都可以交互，主渲染 canvas 在最上层 */
         #splat-viewer canvas { pointer-events: auto !important; position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; z-index: 100 !important; }
+
+        /* AI 聊天折叠按钮 */
+        #chat-toggle-btn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 2101;
+            padding: 8px 14px;
+            border-radius: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            border: 1px solid #444;
+            cursor: pointer;
+            pointer-events: auto;
+            font-size: 0.85em;
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            #app-title {
+                top: 10px;
+                font-size: 20px;
+            }
+            #lang-toggle, #map-style-toggle, #upload-btn {
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+            #map-style-toggle {
+                left: 80px;
+            }
+            #upload-btn {
+                top: 60px;
+                right: 10px;
+                padding: 8px 14px;
+            }
+            #info-bar {
+                bottom: 10px;
+                width: 94%;
+                padding: 12px;
+            }
+            #effect-controls {
+                top: auto;
+                bottom: 80px;
+                left: 10px;
+                right: 10px;
+                min-width: 0;
+                width: auto;
+            }
+            #view-lang-toggle {
+                top: 20px;
+                right: 20px;
+            }
+            #chat-window {
+                left: 0;
+                right: 0;
+                bottom: 0;
+                width: 100%;
+                height: 45vh;
+                border-radius: 16px 16px 0 0;
+            }
+            #chat-toggle-btn {
+                bottom: 50px;
+                right: 15px;
+            }
+        }
     </style>
     <script type="importmap">{ "imports": { 
             "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.178.0/three.module.js",
@@ -110,6 +175,7 @@
             </div>
         </div>
         <button id="view-lang-toggle">EN / 中</button>
+        <button id="chat-toggle-btn">AI 聊天</button>
         <div id="chat-window">
             <div id="gemini-config-ui" style="padding:20px; text-align:center;">
                 <p style="color:var(--primary); font-size:0.9em;">👤 激活 AI 导览员</p>
@@ -166,7 +232,7 @@
         import { SparkControls, SplatMesh, dyno } from '@sparkjsdev/spark';
 
         const REPO_ID = "ColinWong24/my-gaussian-world";
-            const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None', intensity: 0.8 }, animateT: null, baseTime: 0, effectStartTime: 0, modelCenter: null, audiuno: { port: null, reader: null, heartRate: 0, isConnected: false, usePhysiological: true, lastHeartbeatTime: 0, heartbeatTimes: [], heartbeatPeaks: [] }, isInitializing: false };
+            const state = { locations: [], currentLoc: null, lang: 'cn', scene: null, camera: null, renderer: null, controls: null, splatMesh: null, animationId: null, resizeHandler: null, isPicking: false, selectedCoords: null, deeplKey: localStorage.getItem('DEEPL_KEY') || '', effectParams: { effect: 'None', intensity: 0.8 }, animateT: null, baseTime: 0, effectStartTime: 0, modelCenter: null, audiuno: { port: null, reader: null, heartRate: 0, isConnected: false, usePhysiological: true, lastHeartbeatTime: 0, heartbeatTimes: [], heartbeatPeaks: [] }, isInitializing: false, isChatOpen: false };
         let ACTIVE_GEMINI_KEY = localStorage.getItem('MY_GEMINI_KEY') || '';
         
         // DeepL 自动翻译函数
@@ -230,6 +296,7 @@
             const chatWin = document.getElementById('chat-window');
             if (!chatWin) return;
             chatWin.style.display = 'flex';
+            state.isChatOpen = true;
 
             const cfg = document.getElementById('gemini-config-ui');
             const main = document.getElementById('chat-main-ui');
@@ -250,6 +317,22 @@
                 cfg.style.display = 'block';
                 main.style.display = 'none';
             }
+        }
+
+        // 折叠 / 展开 AI 聊天窗口
+        const chatToggleBtn = document.getElementById('chat-toggle-btn');
+        if (chatToggleBtn) {
+            chatToggleBtn.addEventListener('click', () => {
+                const chatWin = document.getElementById('chat-window');
+                if (!chatWin) return;
+                const isHidden = chatWin.style.display === 'none' || chatWin.style.display === '';
+                if (isHidden) {
+                    showChatUI();
+                } else {
+                    chatWin.style.display = 'none';
+                    state.isChatOpen = false;
+                }
+            });
         }
 
         // 将图片 URL 转换为 base64
