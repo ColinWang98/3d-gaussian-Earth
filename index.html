@@ -225,6 +225,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+    <!-- 本地私密配置（可选）：例如 Cloud Run 聊天 API、key 等。该文件建议放入 .gitignore，不要提交 -->
+    <script src="config.local.js"></script>
     <script type="module">
         import { commit } from '@huggingface/hub';
         import * as THREE from 'three';
