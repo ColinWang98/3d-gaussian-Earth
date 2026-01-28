@@ -1805,14 +1805,28 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
         });
 
         // F 键切换粒子形态（在 3D viewer 中）
+        // 需求：按 F 不再切换到「分解」效果，而是切换到「基础粒子显示状态」（无效果）
         function toggleParticleMode() {
             if (!state.splatMesh) return;
 
+            const effectSelect = document.getElementById('effect-select');
+            const intensityControl = document.getElementById('intensity-control');
+            const shaderEffects = ['Waves', 'Disintegrate'];
+
             if (!state.isParticleMode) {
-                // 进入粒子形态：记住之前的效果，切到分解效果
+                // 进入粒子形态：记住之前的效果，切到「无效果」，仅显示基础粒子
                 state.prevEffectForParticle = state.effectParams.effect || 'None';
-                state.effectParams.effect = 'Disintegrate';
-                state.effectParams.intensity = 1.0;
+                state.effectParams.effect = 'None';
+
+                // 同步下拉框 UI
+                if (effectSelect) {
+                    effectSelect.value = state.effectParams.effect;
+                }
+                // 无效果时隐藏强度控制
+                if (intensityControl) {
+                    intensityControl.style.display = 'none';
+                }
+
                 if (state.splatMesh) {
                     setupSplatModifier(state.splatMesh, state.effectParams.effect);
                     if (state.splatMesh.updateVersion) {
@@ -1820,10 +1834,21 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                     }
                 }
                 state.isParticleMode = true;
-                console.log('粒子形态：开启 (Disintegrate)');
+                console.log('粒子形态：开启（基础粒子状态 / 无效果）');
             } else {
                 // 退出粒子形态：恢复之前的效果
                 state.effectParams.effect = state.prevEffectForParticle || 'None';
+
+                // 同步下拉框 UI
+                if (effectSelect) {
+                    effectSelect.value = state.effectParams.effect;
+                }
+                // 根据恢复后的效果类型，决定是否显示强度控制
+                if (intensityControl) {
+                    const isShaderEffect = shaderEffects.includes(state.effectParams.effect);
+                    intensityControl.style.display = isShaderEffect ? 'block' : 'none';
+                }
+
                 state.isParticleMode = false;
                 if (state.splatMesh) {
                     setupSplatModifier(state.splatMesh, state.effectParams.effect);
