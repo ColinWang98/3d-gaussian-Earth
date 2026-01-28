@@ -471,9 +471,15 @@
             // - 默认：Gemini API Key 直连（不推荐在生产环境暴露 key）
             // - 可选：Vertex AI 代理（推荐）：由本地/云端代理服务安全调用 Vertex AI（无需在前端暴露凭据）
             // - 可选：ADK/自建 HTTP 服务（方案A）：由你自己的服务调用云端模型，再返回给前端
-            const AI_PROVIDER = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.AI_PROVIDER) ? window.LOCAL_CONFIG.AI_PROVIDER : 'gemini';
+            // 选择 AI Provider（优先走自建/云端服务，避免浏览器直连 Google 域名导致模型/版本不兼容）
+            const AI_PROVIDER =
+                (window.LOCAL_CONFIG && window.LOCAL_CONFIG.AI_PROVIDER) ? window.LOCAL_CONFIG.AI_PROVIDER :
+                (window.LOCAL_CONFIG && window.LOCAL_CONFIG.ADK_CHAT_URL) ? 'adk' :
+                (window.LOCAL_CONFIG && window.LOCAL_CONFIG.VERTEX_PROXY_URL) ? 'vertex' :
+                'gemini';
+
             if (AI_PROVIDER === 'gemini' && !ACTIVE_GEMINI_KEY) {
-                alert('请先在右下角输入 Gemini API Key（或将 LOCAL_CONFIG.AI_PROVIDER 设置为 vertex 使用代理）');
+                alert('请先在右下角输入 Gemini API Key（或在 config.local.js 配置 ADK_CHAT_URL 走 Cloud Run / 自建服务）');
                 return;
             }
             const input = document.getElementById('chat-input');
