@@ -225,8 +225,10 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
-    <!-- 本地私密配置（可选）：例如 Cloud Run 聊天 API、key 等。该文件建议放入 .gitignore，不要提交 -->
-    <script src="config.local.js"></script>
+    <!-- 公共配置（随 GitHub Pages 发布）：只放非敏感配置，如 Cloud Run URL -->
+    <script src="config.js"></script>
+    <!-- 本地私密配置（可选）：存在则覆盖公共配置；GitHub Pages 上通常不存在，因此用 onerror 静默 -->
+    <script src="config.local.js" onerror="console.info('config.local.js not found (expected on GitHub Pages)')"></script>
     <script type="module">
         import { commit } from '@huggingface/hub';
         import * as THREE from 'three';
