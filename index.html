@@ -69,8 +69,8 @@
         /* AI 聊天折叠按钮 */
         #chat-toggle-btn {
             position: absolute;
-            bottom: 20px;
-            right: 20px;
+            top: 20px;
+            right: 140px;
             z-index: 2101;
             padding: 8px 14px;
             border-radius: 20px;
@@ -126,8 +126,8 @@
                 border-radius: 16px 16px 0 0;
             }
             #chat-toggle-btn {
-                bottom: 50px;
-                right: 15px;
+                top: 20px;
+                right: 20px;
             }
         }
     </style>
@@ -175,7 +175,7 @@
             </div>
         </div>
         <button id="view-lang-toggle">EN / 中</button>
-        <button id="chat-toggle-btn">AI 聊天</button>
+        <button id="chat-toggle-btn">探索记忆</button>
         <div id="chat-window">
             <div id="gemini-config-ui" style="padding:20px; text-align:center;">
                 <p style="color:var(--primary); font-size:0.9em;">👤 激活 AI 导览员</p>
@@ -346,7 +346,7 @@
             if (useHeartbeatLabel) useHeartbeatLabel.innerText = state.lang === 'cn' ? '接受心跳数据' : 'Use heartbeat data';
 
             const chatToggleBtn = document.getElementById('chat-toggle-btn');
-            if (chatToggleBtn) chatToggleBtn.innerText = state.lang === 'cn' ? 'AI 聊天' : 'AI Chat';
+            if (chatToggleBtn) chatToggleBtn.innerText = state.lang === 'cn' ? '探索记忆' : 'Explore Memory';
 
             const chatSendBtn = document.getElementById('chat-send');
             if (chatSendBtn) chatSendBtn.innerText = state.lang === 'cn' ? '发送' : 'Send';
@@ -400,6 +400,11 @@
             msgs.scrollTop = msgs.scrollHeight;
         }
 
+        function clearChatMemory() {
+            const msgs = document.getElementById('chat-msgs');
+            if (msgs) msgs.innerHTML = '';
+        }
+
         function showChatUI() {
             const chatWin = document.getElementById('chat-window');
             if (!chatWin) return;
@@ -408,6 +413,13 @@
 
             const cfg = document.getElementById('gemini-config-ui');
             const main = document.getElementById('chat-main-ui');
+
+            // 场景切换时清空对话记忆（按场景隔离）
+            const sceneKey = (state.currentLoc && (state.currentLoc.id || state.currentLoc.photoPath || `${state.currentLoc.lat},${state.currentLoc.lon}`)) || '';
+            if (state.chatSceneKey !== sceneKey) {
+                clearChatMemory();
+                state.chatSceneKey = sceneKey;
+            }
 
             if (ACTIVE_GEMINI_KEY) {
                 cfg.style.display = 'none';
@@ -1833,6 +1845,12 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
 
         document.getElementById('close-splat').onclick = () => {
             document.getElementById('splat-viewer').style.display = 'none';
+            // 切换/退出场景时清空对话记忆
+            clearChatMemory();
+            state.chatSceneKey = null;
+            const chatWin = document.getElementById('chat-window');
+            if (chatWin) chatWin.style.display = 'none';
+            state.isChatOpen = false;
             // 关闭 3D 视图时恢复地图和 UI
             document.getElementById('ui-layer').style.display = 'block';
             document.getElementById('map-background').style.display = 'block';
