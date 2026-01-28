@@ -674,8 +674,8 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
             
             // 如果选择"无效果"，但启用了心跳数据，仍然需要创建 modifier 来应用心跳波浪
             if (effectType === 'None') {
-                // 如果没有心跳数据，直接清除效果
-                if (!state.audiuno.usePhysiological || state.audiuno.lastHeartbeatTime <= 0) {
+                // 如果没有心跳数据，且不在粒子显示模式，直接清除效果
+                if ((!state.audiuno.usePhysiological || state.audiuno.lastHeartbeatTime <= 0) && !state.isParticleMode) {
                     splatMesh.objectModifier = null;
                     splatMesh.updateGenerator();
                     console.log('效果已清除');
@@ -712,7 +712,7 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 { gsplat: dyno.Gsplat },
                 ({ gsplat }) => {
                     const d = new dyno.Dyno({
-                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int", intensity: "float", heartbeatTime: "float", heartbeatTime1: "float", heartbeatTime2: "float", heartbeatTime3: "float" },
+                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int", intensity: "float", heartbeatTime: "float", heartbeatTime1: "float", heartbeatTime2: "float", heartbeatTime3: "float", particleMode: "int" },
                         outTypes: { gsplat: dyno.Gsplat },
                         globals: () => [
                             dyno.unindent(`
@@ -885,6 +885,17 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                             float heartbeatTime3 = ${inputs.heartbeatTime3};
                             float l = length(localPos.xz);
                             int effectType = int(${inputs.effectType});
+                            int particleMode = int(${inputs.particleMode});
+
+                            // 粒子显示模式：独立于任何效果（不是 Disintegrate，也不是 None）
+                            // 目标：将高斯 splat 收缩成非常小的点状“粒子”，保留原色
+                            if (particleMode == 1) {
+                                float particleScale = 0.004; // 越小越“粒子化”（可按需调）
+                                ${outputs.gsplat}.center = localPos;
+                                ${outputs.gsplat}.scales = vec3(particleScale);
+                                ${outputs.gsplat}.rgba = splatColor;
+                                ${outputs.gsplat}.rgba.a = max(${outputs.gsplat}.rgba.a, 0.8);
+                            } else
                             
                             // 无效果模式（effectType == 0）：只在有心跳数据时应用类似 Magic 效果的径向展开
                             if (effectType == 0) {
@@ -1123,7 +1134,8 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                         heartbeatTime: dyno.dynoFloat(heartbeatTime),
                         heartbeatTime1: dyno.dynoFloat(heartbeatTime1),
                         heartbeatTime2: dyno.dynoFloat(heartbeatTime2),
-                        heartbeatTime3: dyno.dynoFloat(heartbeatTime3)
+                        heartbeatTime3: dyno.dynoFloat(heartbeatTime3),
+                        particleMode: dyno.dynoInt(state.isParticleMode ? 1 : 0)
                     }).gsplat;
                     
                     return { gsplat };
@@ -1805,58 +1817,20 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
         });
 
         // F 键切换粒子形态（在 3D viewer 中）
-        // 需求：按 F 不再切换到「分解」效果，而是切换到「基础粒子显示状态」（无效果）
+        // 需求：按 F 切换到“粒子显示状态”（强制点状显示），不属于任何一种 effect，也不改下拉框
         function toggleParticleMode() {
             if (!state.splatMesh) return;
 
-            const effectSelect = document.getElementById('effect-select');
-            const intensityControl = document.getElementById('intensity-control');
-            const shaderEffects = ['Waves', 'Disintegrate'];
-
             if (!state.isParticleMode) {
-                // 进入粒子形态：记住之前的效果，切到「无效果」，仅显示基础粒子
-                state.prevEffectForParticle = state.effectParams.effect || 'None';
-                state.effectParams.effect = 'None';
-
-                // 同步下拉框 UI
-                if (effectSelect) {
-                    effectSelect.value = state.effectParams.effect;
-                }
-                // 无效果时隐藏强度控制
-                if (intensityControl) {
-                    intensityControl.style.display = 'none';
-                }
-
-                if (state.splatMesh) {
-                    setupSplatModifier(state.splatMesh, state.effectParams.effect);
-                    if (state.splatMesh.updateVersion) {
-                        state.splatMesh.updateVersion();
-                    }
-                }
                 state.isParticleMode = true;
-                console.log('粒子形态：开启（基础粒子状态 / 无效果）');
+                setupSplatModifier(state.splatMesh, state.effectParams.effect);
+                if (state.splatMesh.updateVersion) state.splatMesh.updateVersion();
+                console.log('粒子形态：开启（粒子显示状态）');
             } else {
-                // 退出粒子形态：恢复之前的效果
-                state.effectParams.effect = state.prevEffectForParticle || 'None';
-
-                // 同步下拉框 UI
-                if (effectSelect) {
-                    effectSelect.value = state.effectParams.effect;
-                }
-                // 根据恢复后的效果类型，决定是否显示强度控制
-                if (intensityControl) {
-                    const isShaderEffect = shaderEffects.includes(state.effectParams.effect);
-                    intensityControl.style.display = isShaderEffect ? 'block' : 'none';
-                }
-
                 state.isParticleMode = false;
-                if (state.splatMesh) {
-                    setupSplatModifier(state.splatMesh, state.effectParams.effect);
-                    if (state.splatMesh.updateVersion) {
-                        state.splatMesh.updateVersion();
-                    }
-                }
-                console.log('粒子形态：关闭，恢复效果:', state.effectParams.effect);
+                setupSplatModifier(state.splatMesh, state.effectParams.effect);
+                if (state.splatMesh.updateVersion) state.splatMesh.updateVersion();
+                console.log('粒子形态：关闭（恢复原渲染）');
             }
         }
 
