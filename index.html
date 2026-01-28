@@ -470,6 +470,7 @@
             // AI Provider:
             // - 默认：Gemini API Key 直连（不推荐在生产环境暴露 key）
             // - 可选：Vertex AI 代理（推荐）：由本地/云端代理服务安全调用 Vertex AI（无需在前端暴露凭据）
+            // - 可选：ADK/自建 HTTP 服务（方案A）：由你自己的服务调用云端模型，再返回给前端
             const AI_PROVIDER = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.AI_PROVIDER) ? window.LOCAL_CONFIG.AI_PROVIDER : 'gemini';
             if (AI_PROVIDER === 'gemini' && !ACTIVE_GEMINI_KEY) {
                 alert('请先在右下角输入 Gemini API Key（或将 LOCAL_CONFIG.AI_PROVIDER 设置为 vertex 使用代理）');
@@ -544,7 +545,38 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
 
                 let res = null;
                 let data = null;
-                if (AI_PROVIDER === 'vertex') {
+                if (AI_PROVIDER === 'adk') {
+                    const adkEndpoint = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.ADK_CHAT_URL)
+                        ? window.LOCAL_CONFIG.ADK_CHAT_URL
+                        : 'http://localhost:8010/api/chat';
+                    const adkProvider = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.ADK_PROVIDER)
+                        ? window.LOCAL_CONFIG.ADK_PROVIDER
+                        : 'vertex'; // vertex | gemini
+                    const adkModel = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.ADK_MODEL)
+                        ? window.LOCAL_CONFIG.ADK_MODEL
+                        : 'gemini-2.5-flash';
+                    console.warn('使用 ADK/自建 HTTP 服务:', adkEndpoint, 'provider=', adkProvider, 'model=', adkModel);
+                    res = await fetch(adkEndpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            provider: adkProvider,
+                            model: adkModel,
+                            system: sys,
+                            text,
+                            image: vertexImage
+                        })
+                    });
+                    if (!res.ok) {
+                        const errorData = await res.json().catch(() => ({}));
+                        console.error('ADK/HTTP 服务错误:', res.status, errorData);
+                        throw new Error(`API 错误 ${res.status}: ${errorData.detail ? JSON.stringify(errorData.detail) : (errorData.error?.message || res.statusText)}`);
+                    }
+                    const out = await res.json();
+                    // 兼容我们返回的 {text, raw}
+                    addChatMessage('agent', out.text || '(empty)');
+                    return;
+                } else if (AI_PROVIDER === 'vertex') {
                     const vertexEndpoint = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.VERTEX_PROXY_URL)
                         ? window.LOCAL_CONFIG.VERTEX_PROXY_URL
                         : 'http://localhost:8787/api/vertex/generate';

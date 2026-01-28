@@ -62,6 +62,33 @@ window.LOCAL_CONFIG = {
 - 给 Cloud Run 服务绑定有 Vertex AI 调用权限的 Service Account
 - 前端把 `VERTEX_PROXY_URL` 换成你的 Cloud Run HTTPS 地址
 
+### 1.6（可选）方案A：使用你自己的 ADK/HTTP 服务作为聊天 API
+
+如果你现在是用 `adk web --port 8000` 在本地开发，那么它**只是开发 UI**。要让 `index.html` 调用“云端 API”，你需要一个真正的 HTTP endpoint。
+
+我在 `C:\Users\ROG\my_agent\api_server.py` 增加了一个最小 API：
+- `GET /health`
+- `POST /api/chat`
+
+本地启动（避免和 `adk web --port 8000` 冲突，建议用 8010）：
+```bash
+uvicorn api_server:app --host 0.0.0.0 --port 8010
+```
+
+前端配置（`config.local.js`，本地私密）：
+```js
+window.LOCAL_CONFIG = {
+  AI_PROVIDER: "adk",
+  ADK_CHAT_URL: "http://localhost:8010/api/chat",
+  ADK_PROVIDER: "vertex", // 或 "gemini"
+  ADK_MODEL: "gemini-2.5-flash",
+};
+```
+
+说明：
+- 如果你选 `ADK_PROVIDER: "vertex"`，则后端会走 Vertex AI `generateContent`（需要 GCP ADC / Service Account），参考：[Vertex AI 推理接口参考](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/inference?hl=zh-cn)。
+- 如果你选 `ADK_PROVIDER: "gemini"`，则后端会走 Gemini API `v1`（需要 `GOOGLE_API_KEY`）。
+
 ### 2. 启动本地计算节点
 本地节点负责处理上传的照片并生成 3D 模型。
 
