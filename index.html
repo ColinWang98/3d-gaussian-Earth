@@ -524,19 +524,24 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 
                 // 如果有图片，添加到请求中
                 let vertexImage = null;
+                let vertexImageUrl = null;
                 if (loc.photoPath) {
                     const imageUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${loc.photoPath}`;
-                    const base64Image = await imageUrlToBase64(imageUrl);
-                    if (base64Image) {
-                        // 根据文件扩展名确定 MIME 类型
-                        const mimeType = loc.photoPath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
-                        parts.push({
-                            inlineData: {
-                                mimeType: mimeType,
-                                data: base64Image
-                            }
-                        });
-                        vertexImage = { mimeType, data: base64Image };
+                    vertexImageUrl = imageUrl; // 交给后端拉取（更稳、更省内存）
+                    // 仍保留本地 base64 兜底（某些部署不允许后端外网拉取时可开启）
+                    if (window.LOCAL_CONFIG && window.LOCAL_CONFIG.ADK_SEND_IMAGE_AS_BASE64 === true) {
+                        const base64Image = await imageUrlToBase64(imageUrl);
+                        if (base64Image) {
+                            // 根据文件扩展名确定 MIME 类型
+                            const mimeType = loc.photoPath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+                            parts.push({
+                                inlineData: {
+                                    mimeType: mimeType,
+                                    data: base64Image
+                                }
+                            });
+                            vertexImage = { mimeType, data: base64Image };
+                        }
                     }
                 }
                 
@@ -555,25 +560,49 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                     const adkModel = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.ADK_MODEL)
                         ? window.LOCAL_CONFIG.ADK_MODEL
                         : 'gemini-2.5-flash';
+                    const adkApiKey = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.ADK_API_KEY)
+                        ? window.LOCAL_CONFIG.ADK_API_KEY
+                        : '';
                     console.warn('使用 ADK/自建 HTTP 服务:', adkEndpoint, 'provider=', adkProvider, 'model=', adkModel);
-                    res = await fetch(adkEndpoint, {
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (adkApiKey) headers['X-API-KEY'] = adkApiKey;
+
+                    const payload = {
+                        provider: adkProvider,
+                        model: adkModel,
+                        system: sys,
+                        text,
+                        imageUrl: vertexImageUrl,
+                        image: vertexImage
+                    };
+
+                    // 一次轻量重试（应对冷启动/偶发网络波动）
+                    const doFetch = async () => fetch(adkEndpoint, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            provider: adkProvider,
-                            model: adkModel,
-                            system: sys,
-                            text,
-                            image: vertexImage
-                        })
+                        headers,
+                        body: JSON.stringify(payload)
                     });
+
+                    res = await doFetch();
+                    if (!res.ok) {
+                        // 对 502/503/504 做一次重试
+                        if (res.status === 502 || res.status === 503 || res.status === 504) {
+                            await new Promise(r => setTimeout(r, 600));
+                            res = await doFetch();
+                        }
+                    }
+
                     if (!res.ok) {
                         const errorData = await res.json().catch(() => ({}));
                         console.error('ADK/HTTP 服务错误:', res.status, errorData);
-                        throw new Error(`API 错误 ${res.status}: ${errorData.detail ? JSON.stringify(errorData.detail) : (errorData.error?.message || res.statusText)}`);
+                        const detail = errorData.detail ? JSON.stringify(errorData.detail) : (errorData.error?.message || res.statusText);
+                        let hint = '';
+                        if (res.status === 401) hint = '（鉴权失败：检查 ADK_API_KEY / CHAT_API_KEY）';
+                        else if (res.status === 403) hint = '（权限不足：检查 Cloud Run Service Account 是否有 Vertex AI User）';
+                        else if (res.status === 429) hint = '（请求过多/限流：稍后重试）';
+                        throw new Error(`API 错误 ${res.status}: ${detail}${hint}`);
                     }
                     const out = await res.json();
-                    // 兼容我们返回的 {text, raw}
                     addChatMessage('agent', out.text || '(empty)');
                     return;
                 } else if (AI_PROVIDER === 'vertex') {

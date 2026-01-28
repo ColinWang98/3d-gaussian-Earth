@@ -82,12 +82,20 @@ window.LOCAL_CONFIG = {
   ADK_CHAT_URL: "http://localhost:8010/api/chat",
   ADK_PROVIDER: "vertex", // 或 "gemini"
   ADK_MODEL: "gemini-2.5-flash",
+  // 可选：如果你给后端设置了 CHAT_API_KEY，则前端也要带上
+  // ADK_API_KEY: "your-secret",
+  // 可选：默认后端会自己拉取 imageUrl；若你的部署不允许后端外网拉取，可改为 true 让前端传 base64
+  // ADK_SEND_IMAGE_AS_BASE64: true,
 };
 ```
 
 说明：
 - 如果你选 `ADK_PROVIDER: "vertex"`，则后端会走 Vertex AI `generateContent`（需要 GCP ADC / Service Account），参考：[Vertex AI 推理接口参考](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/inference?hl=zh-cn)。
 - 如果你选 `ADK_PROVIDER: "gemini"`，则后端会走 Gemini API `v1`（需要 `GOOGLE_API_KEY`）。
+
+安全建议（上线强烈建议做）：
+- **CORS 白名单**：在后端设置 `CORS_ORIGINS="https://你的前端域名"`（逗号分隔）
+- **简单鉴权**：在后端设置 `CHAT_API_KEY="一个随机长串"`，前端通过 `ADK_API_KEY` 传 `X-API-KEY`
 
 ### 2. 启动本地计算节点
 本地节点负责处理上传的照片并生成 3D 模型。
