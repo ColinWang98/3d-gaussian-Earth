@@ -537,8 +537,8 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 parts.push({ text: text });
 
                 // 依次尝试多个模型（参考 Gemini 官方文档 https://ai.google.dev/gemini-api/docs）
-                // 优先使用最新的 flash 预览模型，其次回退到 1.5 代模型
-                const modelCandidates = ['gemini-3-flash-preview', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+                // 注意：当前使用 v1beta 端点，只保留文档确认支持的 flash 系列，移除 1.5-pro 以避免 404
+                const modelCandidates = ['gemini-3-flash-preview', 'gemini-1.5-flash'];
                 let res = null;
                 let modelName = '';
                 for (let i = 0; i < modelCandidates.length; i++) {
