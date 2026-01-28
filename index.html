@@ -577,13 +577,24 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                     const headers = { 'Content-Type': 'application/json' };
                     if (adkApiKey) headers['X-API-KEY'] = adkApiKey;
 
+                    // “附近/周围/周边”等问题自动触发地图检索（200m + street view）
+                    const nearbyRegex = /(附近|周围|周边|旁边|近处|around|nearby|surround|附近的情况|200\s*(米|m))/i;
+                    const includeMaps = nearbyRegex.test(text);
+                    const lat = (loc && typeof loc.lat === 'number') ? loc.lat : null;
+                    const lng = (loc && typeof loc.lon === 'number') ? loc.lon : (loc && typeof loc.lng === 'number') ? loc.lng : null;
+
                     const payload = {
                         provider: adkProvider,
                         model: adkModel,
                         system: sys,
                         text,
                         imageUrl: vertexImageUrl,
-                        image: vertexImage
+                        image: vertexImage,
+                        // 传给后端用于 Places + Street View 检索
+                        lat,
+                        lng,
+                        includeMaps,
+                        mapsRadiusM: 200
                     };
 
                     // 一次轻量重试（应对冷启动/偶发网络波动）
