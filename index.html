@@ -467,8 +467,12 @@
         }
 
         async function handleChat() {
-            if (!ACTIVE_GEMINI_KEY) {
-                alert('请先在右下角输入 Gemini API Key');
+            // AI Provider:
+            // - 默认：Gemini API Key 直连（不推荐在生产环境暴露 key）
+            // - 可选：Vertex AI 代理（推荐）：由本地/云端代理服务安全调用 Vertex AI（无需在前端暴露凭据）
+            const AI_PROVIDER = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.AI_PROVIDER) ? window.LOCAL_CONFIG.AI_PROVIDER : 'gemini';
+            if (AI_PROVIDER === 'gemini' && !ACTIVE_GEMINI_KEY) {
+                alert('请先在右下角输入 Gemini API Key（或将 LOCAL_CONFIG.AI_PROVIDER 设置为 vertex 使用代理）');
                 return;
             }
             const input = document.getElementById('chat-input');
@@ -518,6 +522,7 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 const parts = [{ text: sys }];
                 
                 // 如果有图片，添加到请求中
+                let vertexImage = null;
                 if (loc.photoPath) {
                     const imageUrl = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${loc.photoPath}`;
                     const base64Image = await imageUrlToBase64(imageUrl);
@@ -530,41 +535,68 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                                 data: base64Image
                             }
                         });
+                        vertexImage = { mimeType, data: base64Image };
                     }
                 }
                 
                 // 添加用户的问题
                 parts.push({ text: text });
 
-                // 依次尝试多个模型（参考 Gemini 官方文档 https://ai.google.dev/gemini-api/docs）
-                // 注意：当前使用 v1beta 端点，只保留文档确认支持的 flash 系列，移除 1.5-pro 以避免 404
-                const modelCandidates = ['gemini-3-flash-preview', 'gemini-1.5-flash'];
                 let res = null;
-                let modelName = '';
-                for (let i = 0; i < modelCandidates.length; i++) {
-                    modelName = modelCandidates[i];
-                    console.warn('尝试调用 Gemini 模型:', modelName);
-                    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
-                    method: 'POST',
+                let data = null;
+                if (AI_PROVIDER === 'vertex') {
+                    const vertexEndpoint = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.VERTEX_PROXY_URL)
+                        ? window.LOCAL_CONFIG.VERTEX_PROXY_URL
+                        : 'http://localhost:8787/api/vertex/generate';
+                    const vertexModel = (window.LOCAL_CONFIG && window.LOCAL_CONFIG.VERTEX_MODEL)
+                        ? window.LOCAL_CONFIG.VERTEX_MODEL
+                        : 'gemini-2.5-flash';
+                    console.warn('使用 Vertex AI 代理:', vertexEndpoint, 'model=', vertexModel);
+                    res = await fetch(vertexEndpoint, {
+                        method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            contents: [
-                                { role: 'user', parts: parts }
-                            ]
+                            model: vertexModel,
+                            system: sys,
+                            text,
+                            image: vertexImage
                         })
                     });
-                    if (res.ok) break;
-                    // 只在 400/404 时降级到下一个模型，其它错误直接抛出
-                    if (!(res.status === 400 || res.status === 404)) break;
-                }
+                    if (!res.ok) {
+                        const errorData = await res.json().catch(() => ({}));
+                        console.error('Vertex AI Proxy 错误:', res.status, errorData);
+                        throw new Error(`API 错误 ${res.status}: ${errorData.detail ? JSON.stringify(errorData.detail) : (errorData.error?.message || res.statusText)}`);
+                    }
+                    data = await res.json();
+                } else {
+                    // 依次尝试多个模型（参考 Gemini 官方文档 https://ai.google.dev/gemini-api/docs）
+                    // 注意：当前使用 v1beta 端点，只保留文档确认支持的 flash 系列，移除 1.5-pro 以避免 404
+                    const modelCandidates = ['gemini-3-flash-preview', 'gemini-1.5-flash'];
+                    let modelName = '';
+                    for (let i = 0; i < modelCandidates.length; i++) {
+                        modelName = modelCandidates[i];
+                        console.warn('尝试调用 Gemini 模型:', modelName);
+                        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${ACTIVE_GEMINI_KEY}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [
+                                    { role: 'user', parts: parts }
+                                ]
+                            })
+                        });
+                        if (res.ok) break;
+                        // 只在 400/404 时降级到下一个模型，其它错误直接抛出
+                        if (!(res.status === 400 || res.status === 404)) break;
+                    }
                 
-                if (!res.ok) {
-                    const errorData = await res.json().catch(() => ({}));
-                    console.error('Gemini API 错误:', res.status, errorData);
-                    throw new Error(`API 错误 ${res.status}: ${errorData.error?.message || res.statusText}`);
+                    if (!res.ok) {
+                        const errorData = await res.json().catch(() => ({}));
+                        console.error('Gemini API 错误:', res.status, errorData);
+                        throw new Error(`API 错误 ${res.status}: ${errorData.error?.message || res.statusText}`);
+                    }
+                    data = await res.json();
                 }
-                
-                const data = await res.json();
                 const userLang = detectLanguage(text);
                 const defaultReply = userLang === 'cn' 
                     ? '唔，我一时间有点想不到，等我再研究下先～'

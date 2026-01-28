@@ -18,6 +18,50 @@ python -m http.server 8000
 ```
 访问: `http://localhost:8000`
 
+### 1.5（可选）使用 Vertex AI 作为 AI 聊天后端（推荐）
+
+> 原因：Vertex AI 需要 GCP 身份认证（OAuth/Service Account），**不应把凭据放进前端**。推荐做法是用一个本地/云端代理服务，由代理去调用 Vertex AI，再把结果返回给前端。
+
+#### A) 启动本地 Vertex AI 代理（FastAPI）
+
+安装依赖：
+```bash
+pip install -r requirements.txt
+```
+
+配置 GCP（任选一种）：
+- **本机开发**：安装并登录 gcloud，然后：
+```bash
+gcloud auth application-default login
+```
+- 或者使用 **Service Account**（更适合部署到 Cloud Run/服务器）：设置 `GOOGLE_APPLICATION_CREDENTIALS` 指向 json。
+
+设置项目/区域（PowerShell 示例）：
+```powershell
+$env:VERTEX_PROJECT_ID="你的GCP项目ID"
+$env:VERTEX_LOCATION="us-central1"
+$env:VERTEX_MODEL="gemini-2.5-flash"
+```
+
+启动代理（默认端口 8787）：
+```bash
+uvicorn vertex_ai_proxy:app --host 0.0.0.0 --port 8787
+```
+
+然后在 `config.local.js` 里加上（本地私密配置）：
+```js
+window.LOCAL_CONFIG = {
+  AI_PROVIDER: "vertex",
+  VERTEX_PROXY_URL: "http://localhost:8787/api/vertex/generate",
+  VERTEX_MODEL: "gemini-2.5-flash",
+};
+```
+
+#### B) 部署到 Cloud Run（简述）
+- 把 `vertex_ai_proxy.py` 容器化并部署到 Cloud Run
+- 给 Cloud Run 服务绑定有 Vertex AI 调用权限的 Service Account
+- 前端把 `VERTEX_PROXY_URL` 换成你的 Cloud Run HTTPS 地址
+
 ### 2. 启动本地计算节点
 本地节点负责处理上传的照片并生成 3D 模型。
 
