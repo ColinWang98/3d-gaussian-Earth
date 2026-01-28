@@ -890,9 +890,12 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                             // 粒子显示模式：独立于任何效果（不是 Disintegrate，也不是 None）
                             // 目标：将高斯 splat 收缩成非常小的点状“粒子”，保留原色
                             if (particleMode == 1) {
-                                float particleScale = 0.004; // 越小越“粒子化”（可按需调）
                                 ${outputs.gsplat}.center = localPos;
-                                ${outputs.gsplat}.scales = vec3(particleScale);
+                                // 不使用固定 world scale（会导致远处几乎不可见）
+                                // 改为：按原始 splat 尺寸缩小，并设置最小尺寸，保证远处仍可见
+                                float particleShrink = 0.12;
+                                float particleMinScale = 0.0025;
+                                ${outputs.gsplat}.scales = max(splatScales * particleShrink, vec3(particleMinScale));
                                 ${outputs.gsplat}.rgba = splatColor;
                                 ${outputs.gsplat}.rgba.a = max(${outputs.gsplat}.rgba.a, 0.8);
                             } else
