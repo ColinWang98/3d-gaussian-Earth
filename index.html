@@ -264,7 +264,14 @@
                 isChatOpen: false,
                 isParticleMode: false,
                 viewerKeyHandler: null,
-                prevEffectForParticle: null
+                prevEffectForParticle: null,
+                // 3D viewer 鼠标信息（用于粒子模式扰动）
+                mouse: {
+                    worldX: 0,
+                    worldY: 0,
+                    worldZ: 0,
+                    lastTime: -1 // 使用 effectTime 作为时间轴；<0 表示当前没有激活的轨迹
+                }
             };
         let ACTIVE_GEMINI_KEY = localStorage.getItem('MY_GEMINI_KEY') || '';
         
@@ -712,7 +719,21 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                 { gsplat: dyno.Gsplat },
                 ({ gsplat }) => {
                     const d = new dyno.Dyno({
-                        inTypes: { gsplat: dyno.Gsplat, t: "float", effectType: "int", intensity: "float", heartbeatTime: "float", heartbeatTime1: "float", heartbeatTime2: "float", heartbeatTime3: "float", particleMode: "int" },
+                        inTypes: { 
+                            gsplat: dyno.Gsplat, 
+                            t: "float", 
+                            effectType: "int", 
+                            intensity: "float", 
+                            heartbeatTime: "float", 
+                            heartbeatTime1: "float", 
+                            heartbeatTime2: "float", 
+                            heartbeatTime3: "float", 
+                            particleMode: "int",
+                            mouseX: "float",
+                            mouseY: "float",
+                            mouseZ: "float",
+                            mouseTime: "float"
+                        },
                         outTypes: { gsplat: dyno.Gsplat },
                         globals: () => [
                             dyno.unindent(`
@@ -886,10 +907,40 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                             float l = length(localPos.xz);
                             int effectType = int(${inputs.effectType});
                             int particleMode = int(${inputs.particleMode});
+                            float mouseX = ${inputs.mouseX};
+                            float mouseY = ${inputs.mouseY};
+                            float mouseZ = ${inputs.mouseZ};
+                            float mouseTime = ${inputs.mouseTime};
 
                             // 粒子显示模式：独立于任何效果（不是 Disintegrate，也不是 None）
                             // 目标：将高斯 splat 收缩成非常小的点状“粒子”，保留原色
                             if (particleMode == 1) {
+                                // 鼠标轨迹扰动 + 发光：使用最近一次鼠标位置和时间
+                                if (mouseTime >= 0.0) {
+                                    vec3 mousePos = vec3(mouseX, mouseY, mouseZ);
+                                    float timeSinceMouse = t - mouseTime;
+                                    float mouseDuration = 1.2; // 鼠标扰动持续时间
+                                    if (timeSinceMouse >= 0.0 && timeSinceMouse <= mouseDuration) {
+                                        float distToMouse = length(localPos - mousePos);
+                                        // 距离越近扰动越强，使用指数衰减
+                                        float spatialFalloff = exp(-distToMouse * 4.0);
+                                        // 时间上从 1 平滑衰减到 0
+                                        float timeFalloff = 1.0 - smoothstep(0.0, mouseDuration, timeSinceMouse);
+                                        float mouseInfluence = spatialFalloff * timeFalloff;
+                                        
+                                        // 位置扰动：沿从鼠标发出的径向方向轻微推动
+                                        if (distToMouse > 0.0001) {
+                                            vec3 dir = normalize(localPos - mousePos);
+                                            localPos += dir * mouseInfluence * 0.25;
+                                        }
+                                        
+                                        // 发光：提高亮度，偏蓝青色
+                                        vec3 glowColor = vec3(0.4, 0.8, 1.2);
+                                        splatColor.rgb = mix(splatColor.rgb, glowColor, mouseInfluence * 0.8);
+                                        splatColor.a = clamp(splatColor.a + mouseInfluence * 0.7, 0.0, 1.0);
+                                    }
+                                }
+
                                 ${outputs.gsplat}.center = localPos;
                                 // 不使用固定 world scale（会导致远处几乎不可见）
                                 // 改为：按原始 splat 尺寸缩小，并设置最小尺寸，保证远处仍可见
@@ -1138,7 +1189,11 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                         heartbeatTime1: dyno.dynoFloat(heartbeatTime1),
                         heartbeatTime2: dyno.dynoFloat(heartbeatTime2),
                         heartbeatTime3: dyno.dynoFloat(heartbeatTime3),
-                        particleMode: dyno.dynoInt(state.isParticleMode ? 1 : 0)
+                        particleMode: dyno.dynoInt(state.isParticleMode ? 1 : 0),
+                        mouseX: dyno.dynoFloat(state.mouse ? state.mouse.worldX : 0),
+                        mouseY: dyno.dynoFloat(state.mouse ? state.mouse.worldY : 0),
+                        mouseZ: dyno.dynoFloat(state.mouse ? state.mouse.worldZ : 0),
+                        mouseTime: dyno.dynoFloat(state.mouse ? state.mouse.lastTime : -1)
                     }).gsplat;
                     
                     return { gsplat };
@@ -1352,6 +1407,30 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
 
                 // 创建控制器（使用 SparkControls）
                 state.controls = new SparkControls({ canvas: state.renderer.domElement });
+
+                // 注册 3D viewer 鼠标移动，用于粒子模式的“鼠标轨迹扰动 + 发光”
+                const viewerCanvas = state.renderer.domElement;
+                const raycaster = new THREE.Raycaster();
+                const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // y=0 平面
+                const mouseNDC = new THREE.Vector2();
+
+                function onViewerPointerMove(e) {
+                    if (!state.camera) return;
+                    const rect = viewerCanvas.getBoundingClientRect();
+                    const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                    const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+                    mouseNDC.set(x, y);
+                    raycaster.setFromCamera(mouseNDC, state.camera);
+                    const worldPos = new THREE.Vector3();
+                    if (raycaster.ray.intersectPlane(plane, worldPos)) {
+                        state.mouse.worldX = worldPos.x;
+                        state.mouse.worldY = worldPos.y;
+                        state.mouse.worldZ = worldPos.z;
+                        // 使用 effectTime 时间轴：baseTime 相当于当前全局动画时间
+                        state.mouse.lastTime = state.baseTime;
+                    }
+                }
+                viewerCanvas.addEventListener('pointermove', onViewerPointerMove);
 
                 // 加载 splat 模型
                 const url = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/${state.currentLoc.splatPath}`;
@@ -1701,6 +1780,13 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
             }
             state.isParticleMode = false;
             state.prevEffectForParticle = null;
+            // 重置鼠标轨迹状态
+            if (state.mouse) {
+                state.mouse.worldX = 0;
+                state.mouse.worldY = 0;
+                state.mouse.worldZ = 0;
+                state.mouse.lastTime = -1;
+            }
         };
 
         document.getElementById('save-key-btn').onclick = () => {
