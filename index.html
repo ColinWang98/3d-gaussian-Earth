@@ -915,30 +915,25 @@ Keep your answers brief and natural, use casual expressions like "well", "actual
                             // 粒子显示模式：独立于任何效果（不是 Disintegrate，也不是 None）
                             // 目标：将高斯 splat 收缩成非常小的点状“粒子”，保留原色
                             if (particleMode == 1) {
-                                // 鼠标轨迹扰动 + 发光：使用最近一次鼠标位置和时间
+                                // 鼠标轨迹扰动 + 发光：使用最近一次鼠标位置
+                                // 注意：为保证效果明显，这里暂时不做时间衰减，只按空间距离衰减
                                 if (mouseTime >= 0.0) {
                                     vec3 mousePos = vec3(mouseX, mouseY, mouseZ);
-                                    float timeSinceMouse = t - mouseTime;
-                                    float mouseDuration = 1.2; // 鼠标扰动持续时间
-                                    if (timeSinceMouse >= 0.0 && timeSinceMouse <= mouseDuration) {
-                                        float distToMouse = length(localPos - mousePos);
-                                        // 距离越近扰动越强，使用指数衰减
-                                        float spatialFalloff = exp(-distToMouse * 4.0);
-                                        // 时间上从 1 平滑衰减到 0
-                                        float timeFalloff = 1.0 - smoothstep(0.0, mouseDuration, timeSinceMouse);
-                                        float mouseInfluence = spatialFalloff * timeFalloff;
-                                        
-                                        // 位置扰动：沿从鼠标发出的径向方向轻微推动
-                                        if (distToMouse > 0.0001) {
-                                            vec3 dir = normalize(localPos - mousePos);
-                                            localPos += dir * mouseInfluence * 0.25;
-                                        }
-                                        
-                                        // 发光：提高亮度，偏蓝青色
-                                        vec3 glowColor = vec3(0.4, 0.8, 1.2);
-                                        splatColor.rgb = mix(splatColor.rgb, glowColor, mouseInfluence * 0.8);
-                                        splatColor.a = clamp(splatColor.a + mouseInfluence * 0.7, 0.0, 1.0);
+                                    float distToMouse = length(localPos - mousePos);
+                                    // 距离越近扰动越强，使用指数衰减
+                                    float spatialFalloff = exp(-distToMouse * 4.0);
+                                    float mouseInfluence = spatialFalloff;
+                                    
+                                    // 位置扰动：沿从鼠标发出的径向方向轻微推动
+                                    if (distToMouse > 0.0001) {
+                                        vec3 dir = normalize(localPos - mousePos);
+                                        localPos += dir * mouseInfluence * 0.35;
                                     }
+                                    
+                                    // 发光：提高亮度，偏蓝青色
+                                    vec3 glowColor = vec3(0.4, 0.8, 1.2);
+                                    splatColor.rgb = mix(splatColor.rgb, glowColor, mouseInfluence * 0.9);
+                                    splatColor.a = clamp(splatColor.a + mouseInfluence * 0.8, 0.0, 1.0);
                                 }
 
                                 ${outputs.gsplat}.center = localPos;
