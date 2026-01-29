@@ -6,16 +6,60 @@
     <title>HK 3DGS Hub | Pro Holographic Map</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
     <style>
-        :root { --primary: #00ff88; --danger: #ff4444; --glass: rgba(10, 15, 30, 0.95); --accent: #0072ff; }
-        body, html { margin: 0; padding: 0; height: 100%; background: #000; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        :root {
+            --primary: #ffffff;
+            --danger: #f5f5f5;
+            --glass: rgba(5, 5, 5, 0.9);
+            --accent: #f5f5f5;
+        }
+        body, html { margin: 0; padding: 0; height: 100%; background: #000; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: #f5f5f5; }
         #map-background { position: absolute; inset: 0; z-index: 1; }
         #ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; }
         .pointer-auto { pointer-events: auto; }
-        #app-title { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); color: white; font-size: 28px; font-weight: 300; letter-spacing: 2px; z-index: 1001; pointer-events: none; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-        #lang-toggle { position: absolute; top: 20px; left: 20px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; }
-        #map-style-toggle { position: absolute; top: 20px; left: 90px; background: var(--glass); color: white; border: 1px solid #444; padding: 8px 15px; border-radius: 20px; cursor: pointer; z-index: 1001; font-size: 0.9em; }
-        #upload-btn { position: absolute; top: 20px; right: 20px; background: var(--accent); border: none; padding: 12px 24px; border-radius: 50px; color: white; font-weight: bold; cursor: pointer; z-index: 1001; }
-        #info-bar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; background: var(--glass); padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: white; display: none; }
+        #app-title { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); color: #f5f5f5; font-size: 28px; font-weight: 300; letter-spacing: 2px; z-index: 1001; pointer-events: none; text-shadow: 0 2px 10px rgba(0,0,0,0.6); }
+        #lang-toggle,
+        #map-style-toggle {
+            position: absolute;
+            top: 20px;
+            background: rgba(255,255,255,0.03);
+            color: #f5f5f5;
+            border: 1px solid #444;
+            padding: 8px 15px;
+            border-radius: 999px;
+            cursor: pointer;
+            z-index: 1001;
+            font-size: 0.9em;
+        }
+        #lang-toggle { left: 20px; }
+        #map-style-toggle { left: 110px; }
+        #upload-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #f5f5f5;
+            border: 1px solid #f5f5f5;
+            padding: 10px 22px;
+            border-radius: 999px;
+            color: #000;
+            font-weight: 500;
+            cursor: pointer;
+            z-index: 1001;
+            letter-spacing: 0.03em;
+        }
+        #info-bar {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 450px;
+            background: var(--glass);
+            padding: 18px 20px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #f5f5f5;
+            display: none;
+        }
         #splat-viewer { position: absolute; inset: 0; background: transparent; z-index: 9999; display: none; }
         /* 确保 splat-viewer 本身不阻挡鼠标事件，只有子元素可以交互
            允许返回按钮、效果控制面板、语言切换按钮和聊天窗口接收鼠标事件 */
@@ -23,29 +67,90 @@
         #close-splat { position: absolute; top: 20px; left: 20px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; }
         #effect-controls { position: absolute; top: 20px; left: 200px; z-index: 2100; background: var(--glass); border-radius: 15px; border: 1px solid #333; padding: 15px; min-width: 200px; pointer-events: auto; display: none; }
         #effect-controls label { color: white; font-size: 0.9em; display: block; margin-bottom: 8px; }
-        #effect-select { width: 100%; padding: 8px; background: #050510; border: 1px solid #444; color: white; border-radius: 8px; cursor: pointer; margin-bottom: 10px; }
+        #effect-select {
+            width: 100%;
+            padding: 8px;
+            background: #0b0b0b;
+            border: 1px solid #444;
+            color: #f5f5f5;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
         #intensity-control { margin-bottom: 10px; }
         #intensity-control label { display: block; margin-bottom: 5px; }
         #intensity-slider { width: 100%; }
-        #reset-time-btn { width: 100%; padding: 8px; background: var(--accent); border: 1px solid #444; color: white; border-radius: 8px; cursor: pointer; font-size: 0.85em; margin-bottom: 10px; }
+        #reset-time-btn {
+            width: 100%;
+            padding: 8px;
+            background: transparent;
+            border: 1px solid #555;
+            color: #f5f5f5;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85em;
+            margin-bottom: 10px;
+        }
         #audiuno-controls { margin-top: 10px; padding-top: 10px; border-top: 1px solid #333; }
         #audiuno-status { font-size: 0.8em; color: #aaa; margin-bottom: 5px; }
-        #connect-audiuno-btn { width: 100%; padding: 8px; background: #00ff88; border: 1px solid #444; color: #000; border-radius: 8px; cursor: pointer; font-size: 0.85em; font-weight: bold; }
+        #connect-audiuno-btn {
+            width: 100%;
+            padding: 8px;
+            background: transparent;
+            border: 1px solid #555;
+            color: #f5f5f5;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
         #audiuno-toggle-row { margin-top: 8px; display: flex; align-items: center; gap: 8px; color: #ddd; font-size: 0.85em; }
         #audiuno-toggle-row input { width: auto; margin: 0; }
-        #heart-rate-display { font-size: 0.9em; color: #00ff88; margin-top: 5px; }
+        #heart-rate-display { font-size: 0.9em; color: #f5f5f5; margin-top: 5px; }
         #view-lang-toggle { position: absolute; top: 20px; right: 360px; z-index: 2100; padding: 10px 20px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; cursor: pointer; pointer-events: auto; display: none; }
         /* 为了确保 3D 画布可交互，聊天窗口不拦截鼠标事件 */
-        #chat-window { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 400px; max-height: 70vh; background: var(--glass); border-radius: 15px; border: 1px solid #333; display: none; flex-direction: column; z-index: 2100; box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: hidden; }
+        #chat-window {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            height: 400px;
+            max-height: 70vh;
+            background: var(--glass);
+            border-radius: 16px;
+            border: 1px solid #333;
+            display: none;
+            flex-direction: column;
+            z-index: 2100;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.8);
+            overflow: hidden;
+        }
         #chat-msgs { flex: 1; padding: 12px; overflow-y: auto; font-size: 0.85em; color: #eee; display: flex; flex-direction: column; gap: 10px; }
-        .msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; }
-        .msg-agent { background: var(--accent); align-self: flex-start; }
-        .msg-user { background: #333; align-self: flex-end; }
+        .msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; border: 1px solid #333; }
+        .msg-agent { background: #111; align-self: flex-start; }
+        .msg-user { background: #1f1f1f; align-self: flex-end; }
         #chat-input-wrap { display: flex; border-top: 1px solid #333; padding: 10px; background: rgba(0,0,0,0.3); }
         #chat-input { flex: 1; background: transparent; border: none; color: white; outline: none; }
         #modal-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 3000; pointer-events: auto; }
-        .modal-box { background: #151525; padding: 25px; border-radius: 16px; width: 90%; max-width: 400px; color: white; border: 1px solid #333; }
-        input, textarea { width: 100%; box-sizing: border-box; background: #050510; border: 1px solid #444; color: white; padding: 12px; border-radius: 8px; margin: 10px 0; }
+        .modal-box {
+            background: #050505;
+            padding: 24px;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 400px;
+            color: #f5f5f5;
+            border: 1px solid #333;
+        }
+        input, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            background: #0b0b0b;
+            border: 1px solid #444;
+            color: #f5f5f5;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
         /* 加载提示：改为右上角小徽标，而不是全屏遮罩，且不拦截交互 */
         #loading-overlay {
             position: absolute;
@@ -72,14 +177,15 @@
             top: 20px;
             right: 140px;
             z-index: 2101;
-            padding: 8px 14px;
-            border-radius: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            color: #fff;
+            padding: 8px 16px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.04);
+            color: #f5f5f5;
             border: 1px solid #444;
             cursor: pointer;
             pointer-events: auto;
             font-size: 0.85em;
+            letter-spacing: 0.04em;
         }
 
         /* 移动端适配 */
@@ -178,9 +284,9 @@
         <button id="chat-toggle-btn">探索记忆</button>
         <div id="chat-window">
             <div id="gemini-config-ui" style="padding:20px; text-align:center;">
-                <p style="color:var(--primary); font-size:0.9em;">👤 激活 AI 导览员</p>
+                <p style="color:#f5f5f5; font-size:0.9em; letter-spacing:0.04em;">👤 激活 AI 导览员</p>
                 <input type="password" id="user-gemini-key" placeholder="Gemini API Key...">
-                <button id="save-key-btn" style="background:var(--accent); color:white; border:none; padding:10px; width:100%; border-radius:8px; cursor:pointer;">开启 AI 对话</button>
+                <button id="save-key-btn" style="background:#f5f5f5; color:#000; border:1px solid #f5f5f5; padding:10px; width:100%; border-radius:999px; cursor:pointer; font-weight:500;">开启 AI 对话</button>
             </div>
             <div id="chat-main-ui" style="display:none; flex-direction:column; height:100%;">
                 <div id="chat-msgs"></div>
@@ -201,25 +307,25 @@
             <h3 id="loc-title" style="margin:0"></h3>
             <p id="loc-desc" style="color:#aaa; font-size:0.85em; margin:10px 0;"></p>
             <div style="display:flex; justify-content:space-between; gap:10px;">
-                <button id="del-btn" style="background:var(--danger); border:none; padding:8px 15px; border-radius:10px; color:white; cursor:pointer; font-weight:bold;">删除</button>
-                <button id="enter-btn" style="background:var(--primary); border:none; padding:10px 25px; border-radius:20px; cursor:pointer; font-weight:bold; color:#000;">全息查看</button>
+                <button id="del-btn" style="background:#111; border:1px solid #444; padding:8px 16px; border-radius:999px; color:#f5f5f5; cursor:pointer; font-weight:500;">删除</button>
+                <button id="enter-btn" style="background:#f5f5f5; border:1px solid #f5f5f5; padding:10px 24px; border-radius:999px; cursor:pointer; font-weight:500; color:#000;">全息查看</button>
             </div>
         </div>
     </div>
 
     <div id="modal-overlay">
         <div class="modal-box">
-            <h3 style="margin:0 0 15px 0">创建重建任务</h3>
+            <h3 style="margin:0 0 15px 0; font-weight:400;">创建重建任务</h3>
             <input type="password" id="hf-token" placeholder="Hugging Face Write Token">
             <input type="text" id="loc-name" placeholder="地点名称 (中文)">
             <input type="text" id="loc-name-en" placeholder="Location Name (English，留空将自动翻译)">
             <div style="display:flex; gap:8px;">
                 <input type="text" id="lat-lon" readonly placeholder="点击地图拾取坐标">
-                <button id="pick-btn" style="background:var(--accent); border:none; padding:0 15px; border-radius:8px; color:white; cursor:pointer;">拾取</button>
+                <button id="pick-btn" style="background:#111; border:1px solid #444; padding:0 16px; border-radius:999px; color:#f5f5f5; cursor:pointer;">拾取</button>
             </div>
             <input type="file" id="photo-input" accept="image/*">
             <textarea id="desc-input" rows="2" placeholder="请输入描述 (中文，将自动翻译为英文)..."></textarea>
-            <button id="submit-btn" style="width:100%; background:var(--primary); border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; margin-top:10px;">上传任务</button>
+            <button id="submit-btn" style="width:100%; background:#f5f5f5; border:1px solid #f5f5f5; padding:12px; border-radius:999px; font-weight:500; cursor:pointer; margin-top:10px; color:#000;">上传任务</button>
             <button onclick="document.getElementById('modal-overlay').style.display='none'" style="width:100%; background:none; border:none; color:#888; margin-top:10px; cursor:pointer;">取消</button>
         </div>
     </div>
