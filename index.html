@@ -403,6 +403,8 @@
         function clearChatMemory() {
             const msgs = document.getElementById('chat-msgs');
             if (msgs) msgs.innerHTML = '';
+            // 重置“是否已欢迎过”标记，保证每个场景只欢迎一次
+            state.chatGreeted = false;
         }
 
         function showChatUI() {
@@ -424,14 +426,17 @@
             if (ACTIVE_GEMINI_KEY) {
                 cfg.style.display = 'none';
                 main.style.display = 'flex';
-                // 首次打开当前地点时打个招呼（根据当前语言设置）
-                if (document.getElementById('chat-msgs').children.length === 0 && state.currentLoc) {
-                    const locName = state.currentLoc.name || state.currentLoc.name_en || '这个地方';
+                // 当前场景只打招呼一次，避免重复自我介绍
+                if (!state.chatGreeted && state.currentLoc) {
+                    const locName = state.lang === 'cn'
+                        ? (state.currentLoc.name || state.currentLoc.name_en || '这个地方')
+                        : (state.currentLoc.name_en || state.currentLoc.name || 'this place');
                     if (state.lang === 'cn') {
-                        addChatMessage('agent', `你好，我是这个场景的拍摄者，现在带你看：${locName}。可以随便问我问题～`);
+                        addChatMessage('agent', `这是我当时记录下来的一个记忆场景：${locName}。你可以直接问我这里的细节、当时的心情，或者附近有什么值得看的。`);
                     } else {
-                        addChatMessage('agent', `Hi, I'm the photographer of this scene. Let me show you: ${locName}. Feel free to ask me anything!`);
+                        addChatMessage('agent', `This is a memory scene I captured: ${locName}. Ask me about details here, how I felt then, or what’s interesting nearby.`);
                     }
+                    state.chatGreeted = true;
                 }
             } else {
                 cfg.style.display = 'block';
@@ -525,7 +530,9 @@
 - 回答用户关于场景的问题
 - 基于照片内容提供更多背景信息
 
-回答要简短、自然，多用"唔"、"啊"、"其实"、"当时"等口语化表达，就像和朋友聊天一样。请用中文回复。`
+回答要简短、自然，多用"唔"、"啊"、"其实"、"当时"等口语化表达，就像和朋友聊天一样。
+不要在每一轮都重复自我介绍或重复同一段故事，只在需要时简要提及。
+根据用户的提问直接给到重点内容，避免长篇大段重复描述。请用中文回复。`
                 : `You are the photographer of this photo and the creator of this 3D holographic scene. The user is viewing the scene you photographed and reconstructed.
 
 Your identity: Photo provider
@@ -538,7 +545,9 @@ Please chat with the user in a casual, friendly way as the photographer in first
 - Answer questions about the scene
 - Provide more background information based on the photo content
 
-Keep your answers brief and natural, use casual expressions like "well", "actually", "at that time", just like chatting with a friend. Please reply in English.`;
+Keep your answers brief and natural, use casual expressions like "well", "actually", "at that time", just like chatting with a friend.
+Do NOT repeat your self-introduction or the same story in every turn; only mention it briefly when truly helpful.
+Answer the user’s question directly and focus on the key points instead of long repetitive descriptions. Please reply in English.`;
 
             try {
                 // 构建请求的 parts 数组
