@@ -101,7 +101,7 @@
         #splat-viewer { position: absolute; inset: 0; background: transparent; z-index: 9999; display: none; }
         /* 确保 splat-viewer 本身不阻挡鼠标事件，只有子元素可以交互
            允许返回按钮、效果控制面板、语言切换按钮和聊天窗口接收鼠标事件 */
-        #splat-viewer > *:not(canvas):not(#close-splat):not(#chat-window):not(#effect-controls):not(#view-lang-toggle):not(#chat-toggle-btn) { pointer-events: none; }
+        #splat-viewer > *:not(canvas):not(#close-splat):not(#chat-window):not(#effect-controls):not(#view-lang-toggle):not(#chat-toggle-btn):not(#movement-hint) { pointer-events: none; }
         #close-splat {
             position: absolute;
             top: 20px;
@@ -313,6 +313,44 @@
         }
         /* 确保所有 canvas 都可以交互，主渲染 canvas 在最上层 */
         #splat-viewer canvas { pointer-events: auto !important; position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; z-index: 100 !important; }
+        
+        /* WASD 移动提示 */
+        #movement-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 2100;
+            padding: 10px 16px;
+            background: rgba(5, 5, 5, 0.85);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            color: #f5f5f5;
+            font-size: 0.85em;
+            pointer-events: none;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            backdrop-filter: blur(8px);
+        }
+        #movement-hint .keys {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+        #movement-hint .key {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 28px;
+            height: 28px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 500;
+            font-size: 0.9em;
+            color: #f5f5f5;
+        }
 
         /* AI 聊天折叠按钮 */
         #chat-toggle-btn {
@@ -388,6 +426,17 @@
                 top: 20px;
                 right: 20px;
             }
+            #movement-hint {
+                bottom: 10px;
+                left: 10px;
+                padding: 8px 12px;
+                font-size: 0.75em;
+            }
+            #movement-hint .key {
+                min-width: 24px;
+                height: 24px;
+                font-size: 0.85em;
+            }
         }
     </style>
     <script type="importmap">{ "imports": { 
@@ -401,6 +450,15 @@
     <div id="map-background"></div>
     <div id="splat-viewer" class="pointer-auto">
         <div id="loading-overlay"></div>
+        <div id="movement-hint">
+            <span class="keys">
+                <span class="key">W</span>
+                <span class="key">A</span>
+                <span class="key">S</span>
+                <span class="key">D</span>
+            </span>
+            <span id="movement-hint-text">移动</span>
+        </div>
         <button id="close-splat" aria-label="返回地图">
             <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
@@ -663,6 +721,12 @@
                 geminiBtn.innerText = state.lang === 'cn'
                     ? '开启 AI 对话'
                     : 'Start AI Chat';
+            }
+            
+            // WASD 移动提示
+            const movementHintText = document.getElementById('movement-hint-text');
+            if (movementHintText) {
+                movementHintText.textContent = state.lang === 'cn' ? '移动' : 'Move';
             }
 
             // 根据语言切换当前地点标题和描述（如果有英文字段）
@@ -1731,6 +1795,7 @@ Answer the user’s question directly and focus on the key points instead of lon
             
             const container = document.getElementById('splat-viewer');
             const loader = document.getElementById('loading-overlay');
+            const movementHint = document.getElementById('movement-hint');
             
             // 设置初始化标志
             state.isInitializing = true;
@@ -1739,6 +1804,7 @@ Answer the user’s question directly and focus on the key points instead of lon
             container.style.display = 'block';
                 loader.style.display = 'flex';
                 loader.innerText = '正在初始化...';
+                if (movementHint) movementHint.style.display = 'flex';
 
                 // 打开 3D 视图时隐藏地图和上层 UI，避免挡住模型交互
                 document.getElementById('ui-layer').style.display = 'none';
@@ -2152,6 +2218,8 @@ Answer the user’s question directly and focus on the key points instead of lon
 
         document.getElementById('close-splat').onclick = () => {
             document.getElementById('splat-viewer').style.display = 'none';
+            const movementHint = document.getElementById('movement-hint');
+            if (movementHint) movementHint.style.display = 'none';
             // 切换/退出场景时清空对话记忆
             clearChatMemory();
             state.chatSceneKey = null;
